@@ -1,0 +1,17 @@
+name: CI
+on: [ push, pull_request ]
+jobs:
+  ruff:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Check
+      uses: astral-sh/ruff-action@v3
+      with:
+        version-file: "pyproject.toml"
+        args: "check --output-format=github ."
+    - name: Format
+      uses: astral-sh/ruff-action@v3
+      with:
+        version-file: "pyproject.toml"
+        args: "format --check --diff"

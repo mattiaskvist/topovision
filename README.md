@@ -1,2 +1,3 @@
-# topovision
-KTH AI Society Research proejct about extracting topographical data using computer vision
+# TopoVision
+
+KTH AI Society Research project about extracting topographical data using computer vision

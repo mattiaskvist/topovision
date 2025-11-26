@@ -10,3 +10,25 @@ dependencies = []
 dev = [
     "ruff>=0.14.6",
 ]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # Pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "N",   # pep8-naming
+    "SIM", # flake8-simplify
+    "RUF", # Ruff-specific rules
+    "D",   # pydocstyle
+]
+ignore = []
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"

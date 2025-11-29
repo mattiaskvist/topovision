@@ -178,31 +178,35 @@ def generate_synthetic_pair(
     print(f"Found {len(ocr_data)} labels.")
 
 
-# =========================================
-# --- Main Execution Loop ---
-# =========================================
+def main() -> None:
+    """Main execution function to generate synthetic Perlin noise terrain data."""
+    output_folder = "data/synthetic/perlin_noise"
+    num_images_to_generate = 5
+    image_size = (512, 512)
 
-OUTPUT_FOLDER = "data/synthetic/perlin_noise"
-NUM_IMAGES_TO_GENERATE = 5
-IMAGE_SIZE = (512, 512)
-
-print(f"Starting generation of {NUM_IMAGES_TO_GENERATE} SPARSE synthetic datasets...")
-print(f"Output directory: {OUTPUT_FOLDER}")
-
-for i in range(NUM_IMAGES_TO_GENERATE):
-    # Scale 500-700 ensures big, smooth hills
-    rand_scale = random.uniform(300.0, 500.0)
-    rand_z = random.uniform(400, 800)
-
-    # octaves=3 is default in the function, giving smoother terrain
-    mock_dem = generate_perlin_terrain(
-        shape=IMAGE_SIZE, scale=rand_scale, z_scale=rand_z
+    print(
+        f"Starting generation of {num_images_to_generate} SPARSE synthetic datasets..."
     )
+    print(f"Output directory: {output_folder}")
 
-    # High interval (75-125) ensures very few lines (sparse)
-    rand_interval = random.choice([75, 100, 125])
-    generate_synthetic_pair(
-        mock_dem, OUTPUT_FOLDER, file_id=i, contour_interval=rand_interval
-    )
+    for i in range(num_images_to_generate):
+        # Scale 500-700 ensures big, smooth hills
+        rand_scale = random.uniform(300.0, 500.0)
+        rand_z = random.uniform(400, 800)
 
-print(f"\nDone! Check the '{OUTPUT_FOLDER}' directory.")
+        # octaves=3 is default in the function, giving smoother terrain
+        mock_dem = generate_perlin_terrain(
+            shape=image_size, scale=rand_scale, z_scale=rand_z
+        )
+
+        # High interval (75-125) ensures very few lines (sparse)
+        rand_interval = random.choice([75, 100, 125])
+        generate_synthetic_pair(
+            mock_dem, output_folder, file_id=i, contour_interval=rand_interval
+        )
+
+    print(f"\nDone! Check the '{output_folder}' directory.")
+
+
+if __name__ == "__main__":
+    main()

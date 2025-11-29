@@ -48,6 +48,13 @@ def generate_perlin_terrain(
 
     Returns:
         np.ndarray: A 2D float32 array of height values.
+
+    Note:
+        This function uses nested loops to generate noise values, which can be slow for
+        very large arrays (e.g., > 1024x1024). The `noise` library does not currently
+        support vectorization, and `np.vectorize` offers negligible performance benefits
+        due to the underlying C extension implementation. For standard use cases
+        (e.g., 512x512), performance is acceptable.
     """
     data = np.zeros(shape)
 

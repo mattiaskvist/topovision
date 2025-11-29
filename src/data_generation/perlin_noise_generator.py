@@ -116,7 +116,11 @@ def _generate_mask_image(
     )
 
     mask_filename = os.path.join(output_dir, f"{base_name}_mask.png")
-    fig_mask.savefig(mask_filename, dpi=dpi, pad_inches=0)
+    try:
+        fig_mask.savefig(mask_filename, dpi=dpi, pad_inches=0)
+    except OSError as e:
+        print(f"Error saving mask image to {mask_filename}: {e}")
+        raise
     plt.close(fig_mask)
 
 
@@ -259,7 +263,11 @@ def _generate_ocr_image_and_annotations(
     # Save the actual image
     image_filename = f"{base_name}_image.png"
     full_image_path = os.path.join(output_dir, image_filename)
-    fig_img.savefig(full_image_path, dpi=dpi, pad_inches=0)
+    try:
+        fig_img.savefig(full_image_path, dpi=dpi, pad_inches=0)
+    except OSError as e:
+        print(f"Error saving OCR image to {full_image_path}: {e}")
+        raise
     plt.close(fig_img)
 
     print(f"Found {len(coco_annotations)} labels.")
@@ -315,7 +323,11 @@ def _generate_debug_image(
             ax_debug.add_patch(rect_patch)
 
         debug_filename = os.path.join(output_dir, f"{base_name}_debug.png")
-        fig_debug.savefig(debug_filename, dpi=dpi, pad_inches=0)
+        try:
+            fig_debug.savefig(debug_filename, dpi=dpi, pad_inches=0)
+        except OSError as e:
+            print(f"Error saving debug image to {debug_filename}: {e}")
+            raise
         plt.close(fig_debug)
 
 
@@ -341,7 +353,11 @@ def generate_synthetic_pair(
     if contour_interval <= 0:
         raise ValueError("contour_interval must be positive")
 
-    os.makedirs(output_dir, exist_ok=True)
+    try:
+        os.makedirs(output_dir, exist_ok=True)
+    except OSError as e:
+        print(f"Error creating directory {output_dir}: {e}")
+        raise
     base_name = f"sparse_{file_id}"
     h, w = data_array.shape
 
@@ -431,8 +447,12 @@ def main() -> None:
 
     # Save COCO JSON
     coco_filename = os.path.join(output_folder, "coco_annotations.json")
-    with open(coco_filename, "w") as f:
-        json.dump(coco_output, f, indent=4)
+    try:
+        with open(coco_filename, "w") as f:
+            json.dump(coco_output, f, indent=4)
+    except OSError as e:
+        print(f"Error saving COCO annotations to {coco_filename}: {e}")
+        raise
 
     print(f"\nDone! Check the '{output_folder}' directory.")
 

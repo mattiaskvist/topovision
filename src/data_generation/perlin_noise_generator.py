@@ -80,44 +80,24 @@ def generate_perlin_terrain(
 # --- PART 2: The Annotation Generator ---
 
 
-def generate_synthetic_pair(
-    data_array: np.ndarray,
-    output_dir: str,
-    file_id: int,
-    annotation_id_start: int,
-    contour_interval: int = 80,
-) -> tuple[dict, list[dict], int]:
-    """Generates a synthetic contour map image, a mask, and OCR annotations.
-
-    Args:
-        data_array (np.ndarray): The 2D height array.
-        output_dir (str): Directory to save the outputs.
-        file_id (int): Identifier for the generated files.
-        annotation_id_start (int): Starting ID for annotations.
-        contour_interval (int): The vertical distance between contour lines.
-
-    Returns:
-        tuple: (image_info_dict, list_of_annotation_dicts, next_annotation_id)
-    """
-    if contour_interval <= 0:
-        raise ValueError("contour_interval must be positive")
-
-    os.makedirs(output_dir, exist_ok=True)
-    base_name = f"sparse_{file_id}"
-    h, w = data_array.shape
-
-    # DPI must match between figure creation and savefig to ensure
-    # pixel coordinates are accurate.
-    dpi = 100
-    figsize = (w / dpi, h / dpi)
-
-    # Determine contour levels
+def _calculate_contour_levels(
+    data_array: np.ndarray, contour_interval: int
+) -> np.ndarray:
+    """Calculates contour levels based on data range and interval."""
     z_min = np.floor(np.min(data_array) / contour_interval) * contour_interval
     z_max = np.ceil(np.max(data_array) / contour_interval) * contour_interval
-    levels = np.arange(z_min, z_max + contour_interval, contour_interval)
+    return np.arange(z_min, z_max + contour_interval, contour_interval)
 
-    # --- PASS 1: Generate Segmentation Mask (Lines Only) ---
-    # This is useful for U-Net style training (pixel-level segmentation)
+
+def _generate_mask_image(
+    data_array: np.ndarray,
+    levels: np.ndarray,
+    output_dir: str,
+    base_name: str,
+    figsize: tuple[float, float],
+    dpi: int,
+) -> None:
+    """Generates and saves the segmentation mask image."""
     fig_mask = plt.figure(figsize=figsize, dpi=dpi)
     ax_mask = plt.Axes(fig_mask, [0.0, 0.0, 1.0, 1.0])
     ax_mask.set_axis_off()
@@ -132,7 +112,20 @@ def generate_synthetic_pair(
     fig_mask.savefig(mask_filename, dpi=dpi, pad_inches=0)
     plt.close(fig_mask)
 
-    # --- PASS 2: Generate OCR Image & Extract BBoxes ---
+
+def _generate_ocr_image_and_annotations(
+    data_array: np.ndarray,
+    levels: np.ndarray,
+    output_dir: str,
+    base_name: str,
+    file_id: int,
+    annotation_id_start: int,
+    figsize: tuple[float, float],
+    dpi: int,
+    h: int,
+    w: int,
+) -> tuple[dict, list[dict], int, str]:
+    """Generates the OCR image and extracts annotations."""
     fig_img = plt.figure(figsize=figsize, dpi=dpi)
     ax_img = plt.Axes(fig_img, [0.0, 0.0, 1.0, 1.0])
     ax_img.set_axis_off()
@@ -262,8 +255,27 @@ def generate_synthetic_pair(
     fig_img.savefig(full_image_path, dpi=dpi, pad_inches=0)
     plt.close(fig_img)
 
-    # --- PASS 3: Generate Debug Image (Verify BBoxes) ---
-    # We load the saved image to verify the JSON matches the pixels on disk
+    print(f"Found {len(coco_annotations)} labels.")
+
+    image_info = {
+        "id": file_id,
+        "file_name": image_filename,
+        "width": w,
+        "height": h,
+    }
+
+    return image_info, coco_annotations, current_ann_id, full_image_path
+
+
+def _generate_debug_image(
+    full_image_path: str,
+    coco_annotations: list[dict],
+    output_dir: str,
+    base_name: str,
+    figsize: tuple[float, float],
+    dpi: int,
+) -> None:
+    """Generates a debug image with bounding boxes and polygons."""
     if os.path.exists(full_image_path):
         actual_image = plt.imread(full_image_path)
         fig_debug = plt.figure(figsize=figsize, dpi=dpi)
@@ -299,16 +311,66 @@ def generate_synthetic_pair(
         fig_debug.savefig(debug_filename, dpi=dpi, pad_inches=0)
         plt.close(fig_debug)
 
-    print(f"Found {len(coco_annotations)} labels.")
 
-    image_info = {
-        "id": file_id,
-        "file_name": image_filename,
-        "width": w,
-        "height": h,
-    }
+def generate_synthetic_pair(
+    data_array: np.ndarray,
+    output_dir: str,
+    file_id: int,
+    annotation_id_start: int,
+    contour_interval: int = 80,
+) -> tuple[dict, list[dict], int]:
+    """Generates a synthetic contour map image, a mask, and OCR annotations.
 
-    return image_info, coco_annotations, current_ann_id
+    Args:
+        data_array (np.ndarray): The 2D height array.
+        output_dir (str): Directory to save the outputs.
+        file_id (int): Identifier for the generated files.
+        annotation_id_start (int): Starting ID for annotations.
+        contour_interval (int): The vertical distance between contour lines.
+
+    Returns:
+        tuple: (image_info_dict, list_of_annotation_dicts, next_annotation_id)
+    """
+    if contour_interval <= 0:
+        raise ValueError("contour_interval must be positive")
+
+    os.makedirs(output_dir, exist_ok=True)
+    base_name = f"sparse_{file_id}"
+    h, w = data_array.shape
+
+    # DPI must match between figure creation and savefig to ensure
+    # pixel coordinates are accurate.
+    dpi = 100
+    figsize = (w / dpi, h / dpi)
+
+    # Determine contour levels
+    levels = _calculate_contour_levels(data_array, contour_interval)
+
+    # --- PASS 1: Generate Segmentation Mask (Lines Only) ---
+    _generate_mask_image(data_array, levels, output_dir, base_name, figsize, dpi)
+
+    # --- PASS 2: Generate OCR Image & Extract BBoxes ---
+    image_info, coco_annotations, next_ann_id, full_image_path = (
+        _generate_ocr_image_and_annotations(
+            data_array,
+            levels,
+            output_dir,
+            base_name,
+            file_id,
+            annotation_id_start,
+            figsize,
+            dpi,
+            h,
+            w,
+        )
+    )
+
+    # --- PASS 3: Generate Debug Image (Verify BBoxes) ---
+    _generate_debug_image(
+        full_image_path, coco_annotations, output_dir, base_name, figsize, dpi
+    )
+
+    return image_info, coco_annotations, next_ann_id
 
 
 def main() -> None:

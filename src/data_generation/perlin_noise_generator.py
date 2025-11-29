@@ -77,7 +77,13 @@ def generate_perlin_terrain(
             data[i][j] = n
 
     # Normalize data to range 0.0 to 1.0
-    data = (data - np.min(data)) / (np.max(data) - np.min(data))
+    data_min = np.min(data)
+    data_max = np.max(data)
+    if np.isclose(data_max, data_min):
+        # Avoid division by zero if terrain is flat
+        data = np.zeros_like(data)
+    else:
+        data = (data - data_min) / (data_max - data_min)
 
     # Scale to desired height
     data = data * z_scale

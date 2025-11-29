@@ -3,6 +3,7 @@
 import json
 import os
 import random
+from datetime import datetime
 
 import matplotlib.pyplot as plt
 import noise
@@ -98,6 +99,9 @@ def generate_synthetic_pair(
     Returns:
         tuple: (image_info_dict, list_of_annotation_dicts, next_annotation_id)
     """
+    if contour_interval <= 0:
+        raise ValueError("contour_interval must be positive")
+
     os.makedirs(output_dir, exist_ok=True)
     base_name = f"sparse_{file_id}"
     h, w = data_array.shape
@@ -309,6 +313,8 @@ def generate_synthetic_pair(
 
 def main() -> None:
     """Main execution function."""
+    random.seed(42)
+
     output_folder = "data/synthetic/perlin_noise"
     num_images_to_generate = 5
     image_size = (512, 512)
@@ -320,7 +326,7 @@ def main() -> None:
     coco_output = {
         "info": {
             "description": "Synthetic Contour Text Dataset",
-            "year": 2024,
+            "year": datetime.now().year,
             "version": "1.0",
         },
         "licenses": [],

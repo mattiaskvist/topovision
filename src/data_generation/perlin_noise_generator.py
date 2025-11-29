@@ -96,7 +96,15 @@ def generate_perlin_terrain(
 def _calculate_contour_levels(
     data_array: np.ndarray, contour_interval: int
 ) -> np.ndarray:
-    """Calculates contour levels based on data range and interval."""
+    """Calculates contour levels based on data range and interval.
+
+    Args:
+        data_array (np.ndarray): The 2D height array.
+        contour_interval (int): The vertical distance between contour lines.
+
+    Returns:
+        np.ndarray: An array of contour levels.
+    """
     z_min = np.floor(np.min(data_array) / contour_interval) * contour_interval
     z_max = np.ceil(np.max(data_array) / contour_interval) * contour_interval
     return np.arange(z_min, z_max + contour_interval, contour_interval)
@@ -110,7 +118,16 @@ def _generate_mask_image(
     figsize: tuple[float, float],
     dpi: int,
 ) -> None:
-    """Generates and saves the segmentation mask image."""
+    """Generates and saves the segmentation mask image.
+
+    Args:
+        data_array (np.ndarray): The 2D height array.
+        levels (np.ndarray): The contour levels to draw.
+        output_dir (str): Directory to save the mask image.
+        base_name (str): Base name for the output file.
+        figsize (tuple): Figure size in inches (width, height).
+        dpi (int): Dots per inch for the figure.
+    """
     fig_mask = plt.figure(figsize=figsize, dpi=dpi)
     ax_mask = plt.Axes(fig_mask, [0.0, 0.0, 1.0, 1.0])
     ax_mask.set_axis_off()
@@ -142,7 +159,27 @@ def _generate_ocr_image_and_annotations(
     h: int,
     w: int,
 ) -> tuple[dict, list[dict], int, str]:
-    """Generates the OCR image and extracts annotations."""
+    """Generates the OCR image and extracts annotations.
+
+    Args:
+        data_array (np.ndarray): The 2D height array.
+        levels (np.ndarray): The contour levels to draw.
+        output_dir (str): Directory to save the image.
+        base_name (str): Base name for the output file.
+        file_id (int): Identifier for the generated file.
+        annotation_id_start (int): Starting ID for annotations.
+        figsize (tuple): Figure size in inches (width, height).
+        dpi (int): Dots per inch for the figure.
+        h (int): Height of the image in pixels.
+        w (int): Width of the image in pixels.
+
+    Returns:
+        tuple: A tuple containing:
+            - image_info (dict): COCO image info dictionary.
+            - coco_annotations (list[dict]): List of COCO annotation dictionaries.
+            - next_ann_id (int): The next available annotation ID.
+            - full_image_path (str): The absolute path to the saved image.
+    """
     fig_img = plt.figure(figsize=figsize, dpi=dpi)
     ax_img = plt.Axes(fig_img, [0.0, 0.0, 1.0, 1.0])
     ax_img.set_axis_off()
@@ -296,7 +333,16 @@ def _generate_debug_image(
     figsize: tuple[float, float],
     dpi: int,
 ) -> None:
-    """Generates a debug image with bounding boxes and polygons."""
+    """Generates a debug image with bounding boxes and polygons.
+
+    Args:
+        full_image_path (str): Path to the source image.
+        coco_annotations (list[dict]): List of COCO annotations to visualize.
+        output_dir (str): Directory to save the debug image.
+        base_name (str): Base name for the output file.
+        figsize (tuple): Figure size in inches (width, height).
+        dpi (int): Dots per inch for the figure.
+    """
     if os.path.exists(full_image_path):
         actual_image = plt.imread(full_image_path)
         fig_debug = plt.figure(figsize=figsize, dpi=dpi)

@@ -9,6 +9,13 @@ import noise
 import numpy as np
 from matplotlib.patches import Polygon
 
+# --- Constants ---
+NOISE_REPEAT_X = 1024
+NOISE_REPEAT_Y = 1024
+CONTOUR_LINE_WIDTH = 2.0
+CONTOUR_LABEL_FONT_SIZE = 14
+CONTOUR_LABEL_INLINE_SPACING = 15
+
 # --- PART 1: The Mock Terrain Generator ---
 
 
@@ -55,8 +62,8 @@ def generate_perlin_terrain(
                 octaves=octaves,
                 persistence=persistence,
                 lacunarity=lacunarity,
-                repeatx=1024,
-                repeaty=1024,
+                repeatx=NOISE_REPEAT_X,
+                repeaty=NOISE_REPEAT_Y,
                 base=0,
             )
             data[i][j] = n
@@ -113,7 +120,9 @@ def generate_synthetic_pair(
     fig_mask.add_axes(ax_mask)
 
     ax_mask.imshow(np.zeros_like(data_array), cmap="gray", vmin=0, vmax=1)
-    ax_mask.contour(data_array, levels=levels, colors="white", linewidths=2.0)
+    ax_mask.contour(
+        data_array, levels=levels, colors="white", linewidths=CONTOUR_LINE_WIDTH
+    )
 
     mask_filename = os.path.join(output_dir, f"{base_name}_mask.png")
     fig_mask.savefig(mask_filename, dpi=dpi, pad_inches=0)
@@ -126,11 +135,18 @@ def generate_synthetic_pair(
     fig_img.add_axes(ax_img)
 
     ax_img.imshow(np.zeros_like(data_array), cmap="gray", vmin=0, vmax=1)
-    cs = ax_img.contour(data_array, levels=levels, colors="white", linewidths=2.0)
+    cs = ax_img.contour(
+        data_array, levels=levels, colors="white", linewidths=CONTOUR_LINE_WIDTH
+    )
 
     # Note: inline_spacing puts a gap in the contour line for the text
     clabels = ax_img.clabel(
-        cs, inline=True, fontsize=14, fmt="%1.0f", colors="white", inline_spacing=15
+        cs,
+        inline=True,
+        fontsize=CONTOUR_LABEL_FONT_SIZE,
+        fmt="%1.0f",
+        colors="white",
+        inline_spacing=CONTOUR_LABEL_INLINE_SPACING,
     )
 
     # Force a draw so the renderer calculates text positions

@@ -1,4 +1,4 @@
-"""Synthetic Contour Map Generator based on Perlin noise."""
+"""Synthetic Contour Map Generator with Rotated Text Annotations (COCO Format)."""
 
 import json
 import os
@@ -89,12 +89,14 @@ def generate_synthetic_pair(
         contour_interval (int): The vertical distance between contour lines.
 
     Returns:
-        tuple: (image_info, annotations, next_annotation_id)
+        tuple: (image_info_dict, list_of_annotation_dicts, next_annotation_id)
     """
     os.makedirs(output_dir, exist_ok=True)
     base_name = f"sparse_{file_id}"
     h, w = data_array.shape
 
+    # DPI must match between figure creation and savefig to ensure
+    # pixel coordinates are accurate.
     dpi = 100
     figsize = (w / dpi, h / dpi)
 
@@ -104,13 +106,13 @@ def generate_synthetic_pair(
     levels = np.arange(z_min, z_max + contour_interval, contour_interval)
 
     # --- PASS 1: Generate Segmentation Mask (Lines Only) ---
+    # This is useful for U-Net style training (pixel-level segmentation)
     fig_mask = plt.figure(figsize=figsize, dpi=dpi)
     ax_mask = plt.Axes(fig_mask, [0.0, 0.0, 1.0, 1.0])
     ax_mask.set_axis_off()
     fig_mask.add_axes(ax_mask)
 
     ax_mask.imshow(np.zeros_like(data_array), cmap="gray", vmin=0, vmax=1)
-    # Thicker lines look better on sparse maps
     ax_mask.contour(data_array, levels=levels, colors="white", linewidths=2.0)
 
     mask_filename = os.path.join(output_dir, f"{base_name}_mask.png")
@@ -126,15 +128,17 @@ def generate_synthetic_pair(
     ax_img.imshow(np.zeros_like(data_array), cmap="gray", vmin=0, vmax=1)
     cs = ax_img.contour(data_array, levels=levels, colors="white", linewidths=2.0)
 
-    # Increased font size and spacing for better readability
+    # Note: inline_spacing puts a gap in the contour line for the text
     clabels = ax_img.clabel(
         cs, inline=True, fontsize=14, fmt="%1.0f", colors="white", inline_spacing=15
     )
 
+    # Force a draw so the renderer calculates text positions
     fig_img.canvas.draw()
     renderer = fig_img.canvas.get_renderer()
 
-    # Get the inverse transformation to convert from display to data coordinates
+    # Get transform to convert from Display Pixels -> Image Data Indices
+    # This handles the Y-axis flip (Bottom-Left to Top-Left) automatically.
     inv_trans = ax_img.transData.inverted()
 
     coco_annotations = []
@@ -145,43 +149,38 @@ def generate_synthetic_pair(
     for label in clabels:
         text_content = label.get_text()
 
-        # 1. Get rotation and anchor point
+        # --- ROTATED BOX CALCULATION ---
+
+        # 1. Capture current rotation and anchor
         rotation = label.get_rotation()
         transform = label.get_transform()
-        # The position is usually in data coordinates, transform to display
+        # pos_display is the anchor point of the text in Display Coords (pixels)
         pos_display = transform.transform(label.get_position())
 
-        # 2. Get unrotated bounding box in display coordinates
+        # 2. Get the UN-ROTATED box dimensions
+        # We temporarily set rotation to 0 to get true width/height of the text block
         label.set_rotation(0)
         bbox_unrotated = label.get_window_extent(renderer)
-        label.set_rotation(rotation)  # Restore rotation
+        label.set_rotation(rotation)  # Restore rotation immediately
 
-        # 3. Calculate the 4 corners relative to the anchor point
-        # The anchor point in display coords corresponds to pos_display.
-        # However, bbox_unrotated is absolute display coords of the unrotated text.
-        # We can just take the corners of bbox_unrotated and rotate them around
-        # pos_display.
-
-        # Corners of unrotated box:
-        # p1 (BL), p2 (BR), p3 (TR), p4 (TL) - usually standard order
+        # 3. Define the 4 corners of the unrotated box
+        # Matplotlib text is usually anchored at the center (ha='center', va='center')
+        # for clabels.
+        # So we rotate the corners of the unrotated box around the anchor point.
         corners_display = np.array(
             [
-                [bbox_unrotated.x0, bbox_unrotated.y0],
-                [bbox_unrotated.x1, bbox_unrotated.y0],
-                [bbox_unrotated.x1, bbox_unrotated.y1],
-                [bbox_unrotated.x0, bbox_unrotated.y1],
+                [bbox_unrotated.x0, bbox_unrotated.y0],  # Bottom-Left
+                [bbox_unrotated.x1, bbox_unrotated.y0],  # Bottom-Right
+                [bbox_unrotated.x1, bbox_unrotated.y1],  # Top-Right
+                [bbox_unrotated.x0, bbox_unrotated.y1],  # Top-Left
             ]
         )
 
-        # 4. Rotate corners around the anchor point
-        # Create rotation matrix
+        # 4. Apply Rotation Matrix
+        # Translate corners so anchor is at (0,0) -> Rotate -> Translate back
         rot_rad = np.radians(rotation)
         cos_r = np.cos(rot_rad)
         sin_r = np.sin(rot_rad)
-
-        # Translate to origin (relative to anchor), rotate, translate back
-        # Note: We assume rotation is around the anchor point (pos_display)
-        # Matplotlib rotates text around its anchor.
 
         centered = corners_display - pos_display
         rotated = np.zeros_like(centered)
@@ -189,93 +188,96 @@ def generate_synthetic_pair(
         rotated[:, 1] = centered[:, 0] * sin_r + centered[:, 1] * cos_r
         corners_rotated_display = rotated + pos_display
 
-        # 5. Transform to data coordinates
+        # 5. Convert Display Coords -> Image Coords
+        # This maps the plot pixels to the numpy array indices (0,0 is top-left)
         corners_data = inv_trans.transform(corners_rotated_display)
 
-        # 6. Clamp to image boundaries?
-        # For segmentation, we might want exact points even if slightly out.
-        # But for bbox we definitely want clamped.
-        # Let's clamp the points for safety, but maybe not strictly necessary for
-        # segmentation if we accept out of bounds. Let's clamp to be safe.
+        # 6. Clamp to image boundaries
         corners_data[:, 0] = np.clip(corners_data[:, 0], 0, w)
         corners_data[:, 1] = np.clip(corners_data[:, 1], 0, h)
 
-        # Flatten for segmentation: [x1, y1, x2, y2, x3, y3, x4, y4]
+        # --- FORMATTING FOR COCO ---
+
+        # Segmentation: Flattened list of polygon points [x1, y1, x2, y2, ...]
         segmentation = corners_data.flatten().tolist()
         segmentation = [round(x, 2) for x in segmentation]
 
-        # Calculate axis-aligned bbox from the polygon
+        # BBox: Axis-Aligned Bounding Box [x_min, y_min, width, height]
         x_min = np.min(corners_data[:, 0])
         x_max = np.max(corners_data[:, 0])
         y_min = np.min(corners_data[:, 1])
         y_max = np.max(corners_data[:, 1])
 
-        rect_x = x_min
-        rect_y = y_min
         rect_w = x_max - x_min
         rect_h = y_max - y_min
 
-        # Skip invalid boxes
-        if rect_w <= 0 or rect_h <= 0:
+        # Use the unrotated area for strict polygon area (more accurate than AABB area)
+        true_area = bbox_unrotated.width * bbox_unrotated.height
+
+        # Filter out tiny artifacts
+        if rect_w <= 1 or rect_h <= 1:
             continue
 
         annotation = {
             "id": current_ann_id,
             "image_id": file_id,
             "category_id": 1,
-            "bbox": [int(rect_x), int(rect_y), int(rect_w), int(rect_h)],
-            "area": int(rect_w * rect_h),  # Approx area of AABB
+            "bbox": [
+                round(x_min, 2),
+                round(y_min, 2),
+                round(rect_w, 2),
+                round(rect_h, 2),
+            ],
+            "area": round(true_area, 2),
             "segmentation": [segmentation],
             "iscrowd": 0,
-            "text": text_content,  # Extra field for OCR
+            "attributes": {"text": text_content, "rotation": round(rotation, 2)},
         }
         coco_annotations.append(annotation)
         current_ann_id += 1
 
+    # Save the actual image
     image_filename = f"{base_name}_image.png"
     full_image_path = os.path.join(output_dir, image_filename)
     fig_img.savefig(full_image_path, dpi=dpi, pad_inches=0)
     plt.close(fig_img)
 
-    # --- PASS 3: Generate Debug Image with BBoxes ---
-    # Load the actual generated image to ensure we are debugging what we saved
-    actual_image = plt.imread(full_image_path)
+    # --- PASS 3: Generate Debug Image (Verify BBoxes) ---
+    # We load the saved image to verify the JSON matches the pixels on disk
+    if os.path.exists(full_image_path):
+        actual_image = plt.imread(full_image_path)
+        fig_debug = plt.figure(figsize=figsize, dpi=dpi)
+        ax_debug = plt.Axes(fig_debug, [0.0, 0.0, 1.0, 1.0])
+        ax_debug.set_axis_off()
+        fig_debug.add_axes(ax_debug)
+        ax_debug.imshow(actual_image)
 
-    fig_debug = plt.figure(figsize=figsize, dpi=dpi)
-    ax_debug = plt.Axes(fig_debug, [0.0, 0.0, 1.0, 1.0])
-    ax_debug.set_axis_off()
-    fig_debug.add_axes(ax_debug)
+        for ann in coco_annotations:
+            # Reconstruct polygon from segmentation list
+            poly_coords = np.array(ann["segmentation"][0]).reshape((4, 2))
 
-    ax_debug.imshow(actual_image)
+            # Draw the Polygon (Rotated Box)
+            poly_patch = Polygon(
+                poly_coords, linewidth=1, edgecolor="cyan", facecolor="none"
+            )
+            ax_debug.add_patch(poly_patch)
 
-    # Draw boxes
-    for ann in coco_annotations:
-        # Draw Polygon from segmentation
-        seg_points = ann["segmentation"][0]
-        # Reshape to (4, 2)
-        poly_points = np.array(seg_points).reshape((4, 2))
+            # Draw the AABB (Standard Box) - Optional, usually red
+            x, y, w_box, h_box = ann["bbox"]
+            rect_patch = plt.Rectangle(
+                (x, y),
+                w_box,
+                h_box,
+                linewidth=1,
+                edgecolor="red",
+                facecolor="none",
+                linestyle="--",
+            )
+            ax_debug.add_patch(rect_patch)
 
-        poly = Polygon(
-            poly_points,
-            linewidth=1,
-            edgecolor="red",
-            facecolor="none",
-        )
-        ax_debug.add_patch(poly)
-
-        # Draw text above the box (use first point)
-        ax_debug.text(
-            poly_points[0][0],
-            poly_points[0][1],
-            ann["text"],
-            color="yellow",
-            fontsize=8,
-            verticalalignment="bottom",
-        )
-
-    debug_filename = os.path.join(output_dir, f"{base_name}_debug.png")
-    fig_debug.savefig(debug_filename, dpi=dpi, pad_inches=0)
-    plt.close(fig_debug)
+        debug_filename = os.path.join(output_dir, f"{base_name}_debug.png")
+        fig_debug.savefig(debug_filename, dpi=dpi, pad_inches=0)
+        plt.close(fig_debug)
 
     print(f"Found {len(coco_annotations)} labels.")
 
@@ -290,30 +292,34 @@ def generate_synthetic_pair(
 
 
 def main() -> None:
-    """Main execution function to generate synthetic Perlin noise terrain data."""
+    """Main execution function."""
     output_folder = "data/synthetic/perlin_noise"
     num_images_to_generate = 5
     image_size = (512, 512)
 
-    print(
-        f"Starting generation of {num_images_to_generate} SPARSE synthetic datasets..."
-    )
+    print(f"Starting generation of {num_images_to_generate} datasets...")
     print(f"Output directory: {output_folder}")
 
+    # Standard COCO Header
     coco_output = {
+        "info": {
+            "description": "Synthetic Contour Text Dataset",
+            "year": 2024,
+            "version": "1.0",
+        },
+        "licenses": [],
         "images": [],
         "annotations": [],
-        "categories": [{"id": 1, "name": "elevation_text", "supercategory": "text"}],
+        "categories": [{"id": 1, "name": "text", "supercategory": "ocr"}],
     }
 
     next_annotation_id = 1
 
     for i in range(num_images_to_generate):
         # Scale 500-700 ensures big, smooth hills
-        rand_scale = random.uniform(300.0, 500.0)
+        rand_scale = random.uniform(500.0, 700.0)
         rand_z = random.uniform(400, 800)
 
-        # octaves=3 is default in the function, giving smoother terrain
         mock_dem = generate_perlin_terrain(
             shape=image_size, scale=rand_scale, z_scale=rand_z
         )

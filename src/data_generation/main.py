@@ -12,13 +12,13 @@ import numpy as np
 
 
 def generate_perlin_terrain(
-    shape=(512, 512),
-    scale=500.0,
-    octaves=3,
-    persistence=0.5,
-    lacunarity=2.0,
-    z_scale=600,
-):
+    shape: tuple[int, int] = (512, 512),
+    scale: float = 500.0,
+    octaves: int = 3,
+    persistence: float = 0.5,
+    lacunarity: float = 2.0,
+    z_scale: float = 600,
+) -> np.ndarray:
     """Generates a 2D array representing terrain height using Perlin noise.
 
     Args:
@@ -71,7 +71,12 @@ def generate_perlin_terrain(
 # --- PART 2: The Annotation Generator ---
 
 
-def generate_synthetic_pair(data_array, output_dir, file_id, contour_interval=80):
+def generate_synthetic_pair(
+    data_array: np.ndarray,
+    output_dir: str,
+    file_id: int | str,
+    contour_interval: int = 80,
+) -> None:
     """Generates a synthetic contour map image, a mask, and OCR annotations.
 
     Args:

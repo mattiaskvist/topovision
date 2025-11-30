@@ -130,22 +130,24 @@ def _generate_mask_image(
         dpi (int): Dots per inch for the figure.
     """
     fig_mask = plt.figure(figsize=figsize, dpi=dpi)
-    ax_mask = plt.Axes(fig_mask, [0.0, 0.0, 1.0, 1.0])
-    ax_mask.set_axis_off()
-    fig_mask.add_axes(ax_mask)
-
-    ax_mask.imshow(np.zeros_like(data_array), cmap="gray", vmin=0, vmax=1)
-    ax_mask.contour(
-        data_array, levels=levels, colors="white", linewidths=CONTOUR_LINE_WIDTH
-    )
-
-    mask_filename = os.path.join(output_dir, f"{base_name}_mask.png")
     try:
-        fig_mask.savefig(mask_filename, dpi=dpi, pad_inches=0)
-    except OSError as e:
-        print(f"Error saving mask image to {mask_filename}: {e}")
-        raise
-    plt.close(fig_mask)
+        ax_mask = plt.Axes(fig_mask, [0.0, 0.0, 1.0, 1.0])
+        ax_mask.set_axis_off()
+        fig_mask.add_axes(ax_mask)
+
+        ax_mask.imshow(np.zeros_like(data_array), cmap="gray", vmin=0, vmax=1)
+        ax_mask.contour(
+            data_array, levels=levels, colors="white", linewidths=CONTOUR_LINE_WIDTH
+        )
+
+        mask_filename = os.path.join(output_dir, f"{base_name}_mask.png")
+        try:
+            fig_mask.savefig(mask_filename, dpi=dpi, pad_inches=0)
+        except OSError as e:
+            print(f"Error saving mask image to {mask_filename}: {e}")
+            raise
+    finally:
+        plt.close(fig_mask)
 
 
 def _generate_ocr_image_and_annotations(
@@ -182,139 +184,143 @@ def _generate_ocr_image_and_annotations(
             - full_image_path (str): The absolute path to the saved image.
     """
     fig_img = plt.figure(figsize=figsize, dpi=dpi)
-    ax_img = plt.Axes(fig_img, [0.0, 0.0, 1.0, 1.0])
-    ax_img.set_axis_off()
-    fig_img.add_axes(ax_img)
+    try:
+        ax_img = plt.Axes(fig_img, [0.0, 0.0, 1.0, 1.0])
+        ax_img.set_axis_off()
+        fig_img.add_axes(ax_img)
 
-    ax_img.imshow(np.zeros_like(data_array), cmap="gray", vmin=0, vmax=1)
-    cs = ax_img.contour(
-        data_array, levels=levels, colors="white", linewidths=CONTOUR_LINE_WIDTH
-    )
-
-    # Note: inline_spacing puts a gap in the contour line for the text
-    clabels = ax_img.clabel(
-        cs,
-        inline=True,
-        fontsize=CONTOUR_LABEL_FONT_SIZE,
-        fmt="%1.0f",
-        colors="white",
-        inline_spacing=CONTOUR_LABEL_INLINE_SPACING,
-    )
-
-    # Force a draw so the renderer calculates text positions
-    fig_img.canvas.draw()
-    renderer = fig_img.canvas.get_renderer()
-
-    # Get transform to convert from Display Pixels -> Image Data Indices
-    # This handles the Y-axis flip (Bottom-Left to Top-Left) automatically.
-    inv_trans = ax_img.transData.inverted()
-
-    coco_annotations = []
-    current_ann_id = annotation_id_start
-
-    print(f"Generating {base_name}...", end=" ")
-
-    for label in clabels:
-        text_content = label.get_text()
-
-        # --- ROTATED BOX CALCULATION ---
-
-        # 1. Capture current rotation and anchor
-        rotation = label.get_rotation()
-        transform = label.get_transform()
-        # pos_display is the anchor point of the text in Display Coords (pixels)
-        pos_display = transform.transform(label.get_position())
-
-        # 2. Get the UN-ROTATED box dimensions
-        # We temporarily set rotation to 0 to get true width/height of the text block
-        label.set_rotation(0)
-        bbox_unrotated = label.get_window_extent(renderer)
-        label.set_rotation(rotation)  # Restore rotation immediately
-
-        # 3. Define the 4 corners of the unrotated box
-        # Matplotlib text is usually anchored at the center (ha='center', va='center')
-        # for clabels.
-        # So we rotate the corners of the unrotated box around the anchor point.
-        corners_display = np.array(
-            [
-                [bbox_unrotated.x0, bbox_unrotated.y0],  # Bottom-Left
-                [bbox_unrotated.x1, bbox_unrotated.y0],  # Bottom-Right
-                [bbox_unrotated.x1, bbox_unrotated.y1],  # Top-Right
-                [bbox_unrotated.x0, bbox_unrotated.y1],  # Top-Left
-            ]
+        ax_img.imshow(np.zeros_like(data_array), cmap="gray", vmin=0, vmax=1)
+        cs = ax_img.contour(
+            data_array, levels=levels, colors="white", linewidths=CONTOUR_LINE_WIDTH
         )
 
-        # 4. Apply Rotation Matrix
-        # Translate corners so anchor is at (0,0) -> Rotate -> Translate back
-        rot_rad = np.radians(rotation)
-        cos_r = np.cos(rot_rad)
-        sin_r = np.sin(rot_rad)
+        # Note: inline_spacing puts a gap in the contour line for the text
+        clabels = ax_img.clabel(
+            cs,
+            inline=True,
+            fontsize=CONTOUR_LABEL_FONT_SIZE,
+            fmt="%1.0f",
+            colors="white",
+            inline_spacing=CONTOUR_LABEL_INLINE_SPACING,
+        )
 
-        centered = corners_display - pos_display
-        rotated = np.zeros_like(centered)
-        rotated[:, 0] = centered[:, 0] * cos_r - centered[:, 1] * sin_r
-        rotated[:, 1] = centered[:, 0] * sin_r + centered[:, 1] * cos_r
-        corners_rotated_display = rotated + pos_display
+        # Force a draw so the renderer calculates text positions
+        fig_img.canvas.draw()
+        renderer = fig_img.canvas.get_renderer()
 
-        # 5. Convert Display Coords -> Image Coords
-        # This maps the plot pixels to the numpy array indices (0,0 is top-left)
-        corners_data = inv_trans.transform(corners_rotated_display)
+        # Get transform to convert from Display Pixels -> Image Data Indices
+        # This handles the Y-axis flip (Bottom-Left to Top-Left) automatically.
+        inv_trans = ax_img.transData.inverted()
 
-        # 6. Clamp to image boundaries
-        corners_data[:, 0] = np.clip(corners_data[:, 0], 0, w)
-        corners_data[:, 1] = np.clip(corners_data[:, 1], 0, h)
+        coco_annotations = []
+        current_ann_id = annotation_id_start
 
-        # --- FORMATTING FOR COCO ---
+        print(f"Generating {base_name}...", end=" ")
 
-        # Segmentation: Flattened list of polygon points [x1, y1, x2, y2, ...]
-        segmentation = corners_data.flatten().tolist()
-        segmentation = [round(x, 2) for x in segmentation]
+        for label in clabels:
+            text_content = label.get_text()
 
-        # BBox: Axis-Aligned Bounding Box [x_min, y_min, width, height]
-        x_min = np.min(corners_data[:, 0])
-        x_max = np.max(corners_data[:, 0])
-        y_min = np.min(corners_data[:, 1])
-        y_max = np.max(corners_data[:, 1])
+            # --- ROTATED BOX CALCULATION ---
 
-        rect_w = x_max - x_min
-        rect_h = y_max - y_min
+            # 1. Capture current rotation and anchor
+            rotation = label.get_rotation()
+            transform = label.get_transform()
+            # pos_display is the anchor point of the text in Display Coords (pixels)
+            pos_display = transform.transform(label.get_position())
 
-        # Use the unrotated area for strict polygon area (more accurate than AABB area)
-        true_area = bbox_unrotated.width * bbox_unrotated.height
+            # 2. Get the UN-ROTATED box dimensions
+            # We temporarily set rotation to 0 to get true width/height of the
+            # text block
+            label.set_rotation(0)
+            bbox_unrotated = label.get_window_extent(renderer)
+            label.set_rotation(rotation)  # Restore rotation immediately
 
-        # Filter out tiny artifacts
-        if rect_w <= 1 or rect_h <= 1:
-            continue
+            # 3. Define the 4 corners of the unrotated box
+            # Matplotlib text is usually anchored at the center
+            # (ha='center', va='center') for clabels.
+            # So we rotate the corners of the unrotated box around the anchor point.
+            corners_display = np.array(
+                [
+                    [bbox_unrotated.x0, bbox_unrotated.y0],  # Bottom-Left
+                    [bbox_unrotated.x1, bbox_unrotated.y0],  # Bottom-Right
+                    [bbox_unrotated.x1, bbox_unrotated.y1],  # Top-Right
+                    [bbox_unrotated.x0, bbox_unrotated.y1],  # Top-Left
+                ]
+            )
 
-        annotation = {
-            "id": current_ann_id,
-            "image_id": file_id,
-            "category_id": 1,
-            "bbox": [
-                round(x_min, 2),
-                round(y_min, 2),
-                round(rect_w, 2),
-                round(rect_h, 2),
-            ],
-            "area": round(true_area, 2),
-            "segmentation": [segmentation],
-            "iscrowd": 0,
-            "attributes": {"text": text_content, "rotation": round(rotation, 2)},
-        }
-        coco_annotations.append(annotation)
-        current_ann_id += 1
+            # 4. Apply Rotation Matrix
+            # Translate corners so anchor is at (0,0) -> Rotate -> Translate back
+            rot_rad = np.radians(rotation)
+            cos_r = np.cos(rot_rad)
+            sin_r = np.sin(rot_rad)
 
-    # Save the actual image
-    image_filename = f"{base_name}_image.png"
-    full_image_path = os.path.join(output_dir, image_filename)
-    try:
-        fig_img.savefig(full_image_path, dpi=dpi, pad_inches=0)
-    except OSError as e:
-        print(f"Error saving OCR image to {full_image_path}: {e}")
-        raise
-    plt.close(fig_img)
+            centered = corners_display - pos_display
+            rotated = np.zeros_like(centered)
+            rotated[:, 0] = centered[:, 0] * cos_r - centered[:, 1] * sin_r
+            rotated[:, 1] = centered[:, 0] * sin_r + centered[:, 1] * cos_r
+            corners_rotated_display = rotated + pos_display
 
-    print(f"Found {len(coco_annotations)} labels.")
+            # 5. Convert Display Coords -> Image Coords
+            # This maps the plot pixels to the numpy array indices (0,0 is top-left)
+            corners_data = inv_trans.transform(corners_rotated_display)
+
+            # 6. Clamp to image boundaries
+            corners_data[:, 0] = np.clip(corners_data[:, 0], 0, w)
+            corners_data[:, 1] = np.clip(corners_data[:, 1], 0, h)
+
+            # --- FORMATTING FOR COCO ---
+
+            # Segmentation: Flattened list of polygon points [x1, y1, x2, y2, ...]
+            segmentation = corners_data.flatten().tolist()
+            segmentation = [round(x, 2) for x in segmentation]
+
+            # BBox: Axis-Aligned Bounding Box [x_min, y_min, width, height]
+            x_min = np.min(corners_data[:, 0])
+            x_max = np.max(corners_data[:, 0])
+            y_min = np.min(corners_data[:, 1])
+            y_max = np.max(corners_data[:, 1])
+
+            rect_w = x_max - x_min
+            rect_h = y_max - y_min
+
+            # Use the unrotated area for strict polygon area
+            # (more accurate than AABB area)
+            true_area = bbox_unrotated.width * bbox_unrotated.height
+
+            # Filter out tiny artifacts
+            if rect_w <= 1 or rect_h <= 1:
+                continue
+
+            annotation = {
+                "id": current_ann_id,
+                "image_id": file_id,
+                "category_id": 1,
+                "bbox": [
+                    round(x_min, 2),
+                    round(y_min, 2),
+                    round(rect_w, 2),
+                    round(rect_h, 2),
+                ],
+                "area": round(true_area, 2),
+                "segmentation": [segmentation],
+                "iscrowd": 0,
+                "attributes": {"text": text_content, "rotation": round(rotation, 2)},
+            }
+            coco_annotations.append(annotation)
+            current_ann_id += 1
+
+        # Save the actual image
+        image_filename = f"{base_name}_image.png"
+        full_image_path = os.path.join(output_dir, image_filename)
+        try:
+            fig_img.savefig(full_image_path, dpi=dpi, pad_inches=0)
+        except OSError as e:
+            print(f"Error saving OCR image to {full_image_path}: {e}")
+            raise
+
+        print(f"Found {len(coco_annotations)} labels.")
+    finally:
+        plt.close(fig_img)
 
     image_info = {
         "id": file_id,
@@ -347,41 +353,43 @@ def _generate_debug_image(
     if os.path.exists(full_image_path):
         actual_image = plt.imread(full_image_path)
         fig_debug = plt.figure(figsize=figsize, dpi=dpi)
-        ax_debug = plt.Axes(fig_debug, [0.0, 0.0, 1.0, 1.0])
-        ax_debug.set_axis_off()
-        fig_debug.add_axes(ax_debug)
-        ax_debug.imshow(actual_image)
-
-        for ann in coco_annotations:
-            # Reconstruct polygon from segmentation list
-            poly_coords = np.array(ann["segmentation"][0]).reshape((4, 2))
-
-            # Draw the Polygon (Rotated Box)
-            poly_patch = Polygon(
-                poly_coords, linewidth=1, edgecolor="cyan", facecolor="none"
-            )
-            ax_debug.add_patch(poly_patch)
-
-            # Draw the AABB (Standard Box) - Optional, usually red
-            x, y, w_box, h_box = ann["bbox"]
-            rect_patch = plt.Rectangle(
-                (x, y),
-                w_box,
-                h_box,
-                linewidth=1,
-                edgecolor="red",
-                facecolor="none",
-                linestyle="--",
-            )
-            ax_debug.add_patch(rect_patch)
-
-        debug_filename = os.path.join(output_dir, f"{base_name}_debug.png")
         try:
-            fig_debug.savefig(debug_filename, dpi=dpi, pad_inches=0)
-        except OSError as e:
-            print(f"Error saving debug image to {debug_filename}: {e}")
-            raise
-        plt.close(fig_debug)
+            ax_debug = plt.Axes(fig_debug, [0.0, 0.0, 1.0, 1.0])
+            ax_debug.set_axis_off()
+            fig_debug.add_axes(ax_debug)
+            ax_debug.imshow(actual_image)
+
+            for ann in coco_annotations:
+                # Reconstruct polygon from segmentation list
+                poly_coords = np.array(ann["segmentation"][0]).reshape((4, 2))
+
+                # Draw the Polygon (Rotated Box)
+                poly_patch = Polygon(
+                    poly_coords, linewidth=1, edgecolor="cyan", facecolor="none"
+                )
+                ax_debug.add_patch(poly_patch)
+
+                # Draw the AABB (Standard Box) - Optional, usually red
+                x, y, w_box, h_box = ann["bbox"]
+                rect_patch = plt.Rectangle(
+                    (x, y),
+                    w_box,
+                    h_box,
+                    linewidth=1,
+                    edgecolor="red",
+                    facecolor="none",
+                    linestyle="--",
+                )
+                ax_debug.add_patch(rect_patch)
+
+            debug_filename = os.path.join(output_dir, f"{base_name}_debug.png")
+            try:
+                fig_debug.savefig(debug_filename, dpi=dpi, pad_inches=0)
+            except OSError as e:
+                print(f"Error saving debug image to {debug_filename}: {e}")
+                raise
+        finally:
+            plt.close(fig_debug)
 
 
 def generate_synthetic_pair(

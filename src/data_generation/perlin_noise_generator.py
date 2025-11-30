@@ -16,6 +16,7 @@ NOISE_REPEAT_Y = 1024
 CONTOUR_LINE_WIDTH = 2.0
 CONTOUR_LABEL_FONT_SIZE = 14
 CONTOUR_LABEL_INLINE_SPACING = 15
+DEFAULT_DPI = 100
 
 # --- PART 1: The Mock Terrain Generator ---
 
@@ -389,6 +390,7 @@ def generate_synthetic_pair(
     file_id: int,
     annotation_id_start: int,
     contour_interval: int = 80,
+    dpi: int = DEFAULT_DPI,
 ) -> tuple[dict, list[dict], int]:
     """Generates a synthetic contour map image, a mask, and OCR annotations.
 
@@ -398,6 +400,7 @@ def generate_synthetic_pair(
         file_id (int): Identifier for the generated files.
         annotation_id_start (int): Starting ID for annotations.
         contour_interval (int): The vertical distance between contour lines.
+        dpi (int): Dots per inch for the output images. Defaults to DEFAULT_DPI.
 
     Returns:
         tuple: (image_info_dict, list_of_annotation_dicts, next_annotation_id)
@@ -415,7 +418,6 @@ def generate_synthetic_pair(
 
     # DPI must match between figure creation and savefig to ensure
     # pixel coordinates are accurate.
-    dpi = 100
     figsize = (w / dpi, h / dpi)
 
     # Determine contour levels

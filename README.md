@@ -37,6 +37,6 @@ uv run python src/data_generation/perlin_noise_generator.py
 The generated data will be saved in `data/synthetic/perlin_noise`.
 The output includes:
 - **Images:** Synthetic contour maps with text labels.
-- **Masks:** Segmentation masks for the contour lines (images ending in `_mask.png`, used for training segmentation models).
+- **Masks:** Segmentation masks showing only the contour lines without text labels (images ending in `_mask.png`), suitable for training segmentation models.
 - **Debug Images:** Visualizations of the bounding boxes and polygons.
 - **Annotations:** A `coco_annotations.json` file containing the annotations in COCO format (used for OCR training).

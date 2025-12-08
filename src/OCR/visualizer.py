@@ -4,6 +4,7 @@ import os
 
 from engine.easyocr_engine import EasyOCREngine
 from engine.ocr_engine import OCREngine
+from engine.paddleocr_engine import PaddleOCREngine
 from engine.tesseract_engine import TesseractEngine
 from PIL import Image, ImageDraw, ImageFont
 
@@ -41,8 +42,10 @@ class OCRVisualizer:
             font = ImageFont.load_default()
 
         # 3. Draw Polygons
-        for text, polygon in detections:
-            # polygon is [(x1,y1), (x2,y2), (x3,y3), (x4,y4)]
+        for detection in detections:
+            text = detection.text
+            polygon = detection.polygon.points
+            confidence = detection.confidence
 
             # Draw the tight polygon/box
             draw.polygon(polygon, outline="lime", width=3)
@@ -65,7 +68,10 @@ class OCRVisualizer:
                 fill="lime",
             )
             draw.text(
-                (top_point[0], top_point[1] - text_h), text, fill="black", font=font
+                (top_point[0], top_point[1] - text_h),
+                f"{text} ({confidence:.2f})",
+                fill="black",
+                font=font,
             )
 
         os.makedirs(os.path.dirname(output_filename), exist_ok=True)
@@ -103,6 +109,12 @@ if __name__ == "__main__":
             viz = OCRVisualizer(EasyOCREngine())
             viz.process_and_annotate(
                 image_path=input_img, output_filename=f"output/easyocr/{img}"
+            )
+
+            # Test PaddleOCR
+            viz = OCRVisualizer(PaddleOCREngine())
+            viz.process_and_annotate(
+                image_path=input_img, output_filename=f"output/paddleocr/{img}"
             )
 
         except FileNotFoundError:

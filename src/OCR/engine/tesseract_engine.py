@@ -3,7 +3,7 @@
 import pytesseract
 from PIL import Image
 
-from .ocr_engine import OCREngine
+from .ocr_engine import DetectionResult, OCREngine, Polygon
 
 
 class TesseractEngine(OCREngine):
@@ -26,14 +26,20 @@ class TesseractEngine(OCREngine):
                     data["height"][i],
                 )
 
+                confidence = data["conf"][i]
+
                 # Tesseract only gives upright rectangles, but we convert
                 # them to 4 points to match the interface.
                 # Points: Top-Left, Top-Right, Bottom-Right, Bottom-Left
-                polygon = [
+                points = [
                     (x, y),  # TL
                     (x + w, y),  # TR
                     (x + w, y + h),  # BR
                     (x, y + h),  # BL
                 ]
-                results.append((text, polygon))
+                results.append(
+                    DetectionResult(
+                        text=text, polygon=Polygon(points=points), confidence=confidence
+                    )
+                )
         return results

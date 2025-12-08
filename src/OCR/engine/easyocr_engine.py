@@ -2,7 +2,7 @@
 
 import easyocr
 
-from .ocr_engine import OCREngine
+from .ocr_engine import DetectionResult, OCREngine, Polygon
 
 
 class EasyOCREngine(OCREngine):
@@ -12,7 +12,9 @@ class EasyOCREngine(OCREngine):
         """Initializes the EasyOCREngine with EasyOCR reader."""
         self.reader = easyocr.Reader(["en"], gpu=False)
 
-    def extract_with_polygons(self, image_path: str, rotations=None):
+    def extract_with_polygons(
+        self, image_path: str, rotations=None
+    ) -> list[DetectionResult]:
         """Extract text with polygons.
 
         Args:
@@ -26,8 +28,8 @@ class EasyOCREngine(OCREngine):
         raw_output = self.reader.readtext(image_path, rotation_info=rotations)
 
         results = []
-        for coord, text, _conf in raw_output:
-            polygon = [tuple(map(int, point)) for point in coord]
-            results.append((text, polygon))
+        for coord, text, conf in raw_output:
+            polygon = Polygon(points=[tuple(map(int, point)) for point in coord])
+            results.append(DetectionResult(text=text, polygon=polygon, confidence=conf))
 
         return results

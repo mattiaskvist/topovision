@@ -4,11 +4,11 @@ This module extracts height curves from topographical maps by combining OCR resu
 
 ## Components
 
-1.  **Contour Extraction** (`contours.py`):
+1.  **Contour Extraction** (`engine/`):
 
-    - Extracts vector polylines from binary masks using `cv2.findContours`.
-    - Applies morphological closing to merge close parallel lines (often caused by thick raster lines).
-    - Simplifies lines using `cv2.approxPolyDP`.
+    - **Abstraction**: `ContourExtractionEngine` (ABC) allows swapping extraction methods.
+    - **Implementation**: `CV2ContourEngine` uses `cv2.findContours` and morphological closing.
+    - **Extensibility**: To use a different method (e.g., U-Net), implement a new class inheriting from `ContourExtractionEngine`.
 
 2.  **Matching** (`matcher.py`):
 
@@ -43,3 +43,18 @@ uv run python -m height_extraction.pipeline
 ### Mock OCR
 
 Currently, the system uses a `MockOCREngine` that reads ground truth annotations from `data/synthetic/perlin_noise/coco_annotations.json`. To switch to a real OCR engine (like PaddleOCR), modify `pipeline.py` to initialize `HeightExtractionPipeline` with `PaddleOCREngine()`.
+
+### Custom Contour Engine
+
+To use a custom contour extraction method (e.g., a Deep Learning model):
+
+1.  Create a new class in `src/height_extraction/engine/` that inherits from `ContourExtractionEngine`.
+2.  Implement the `extract_contours` method.
+3.  Pass an instance of your engine to the `HeightExtractionPipeline` constructor:
+
+```python
+from height_extraction.engine.my_custom_engine import MyCustomEngine
+
+contour_engine = MyCustomEngine()
+pipeline = HeightExtractionPipeline(contour_engine=contour_engine)
+```

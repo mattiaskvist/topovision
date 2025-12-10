@@ -97,11 +97,14 @@ class HeightExtractionPipeline:
             cv2.drawContours(img, [contour], -1, color, 2)
 
             # Draw label at the first point of the contour
-            pt = tuple(contour[0][0])
+            pt = contour[0][0]
+            x = max(10, min(img.shape[1] - 50, pt[0]))
+            y = max(20, min(img.shape[0] - 10, pt[1]))
+
             cv2.putText(
                 img,
                 label,
-                pt,
+                (x, y),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.5,
                 (255, 0, 0),  # Blue text
@@ -118,15 +121,21 @@ if __name__ == "__main__":
     # Test on synthetic data
     from pathlib import Path
 
+    from OCR.engine.mock_ocr_engine import MockOCREngine
+
     current_dir = Path(__file__).parent
     project_root = current_dir.parent.parent
     data_dir = project_root / "data" / "synthetic" / "perlin_noise"
+    annotations_path = data_dir / "coco_annotations.json"
 
     image_path = data_dir / "sparse_0_image.png"
     mask_path = data_dir / "sparse_0_mask.png"
 
-    if image_path.exists() and mask_path.exists():
-        pipeline = HeightExtractionPipeline()
+    if image_path.exists() and mask_path.exists() and annotations_path.exists():
+        # Use Mock OCR
+        ocr_engine = MockOCREngine(str(annotations_path))
+        pipeline = HeightExtractionPipeline(ocr_engine=ocr_engine)
+
         contours, heights = pipeline.run(str(image_path), str(mask_path))
 
         output_path = (

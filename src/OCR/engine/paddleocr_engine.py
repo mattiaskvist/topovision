@@ -29,7 +29,6 @@ class PaddleOCREngine(OCREngine):
             for poly, text, score in zip(
                 res["rec_polys"], res["rec_texts"], res["rec_scores"], strict=True
             ):
-                print(f"{poly}, {text}, {score}")
                 parsed_results.append(
                     DetectionResult(
                         text=text, polygon=Polygon(points=poly), confidence=score

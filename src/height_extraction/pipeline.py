@@ -8,7 +8,8 @@ import numpy as np
 from OCR.engine.ocr_engine import OCREngine
 from OCR.engine.paddleocr_engine import PaddleOCREngine
 
-from .contours import extract_contours
+from .engine.contour_engine import ContourExtractionEngine
+from .engine.cv2_contour_engine import CV2ContourEngine
 from .inference import build_adjacency_graph, infer_missing_heights
 from .matcher import match_text_to_contours
 
@@ -16,9 +17,14 @@ from .matcher import match_text_to_contours
 class HeightExtractionPipeline:
     """Pipeline to extract height curves from maps."""
 
-    def __init__(self, ocr_engine: OCREngine = None):
+    def __init__(
+        self,
+        ocr_engine: OCREngine = None,
+        contour_engine: ContourExtractionEngine = None,
+    ):
         """Initializes the pipeline."""
         self.ocr_engine = ocr_engine or PaddleOCREngine()
+        self.contour_engine = contour_engine or CV2ContourEngine()
 
     def run(
         self, image_path: str, mask_path: str, drop_ratio: float = 0.0
@@ -50,7 +56,7 @@ class HeightExtractionPipeline:
 
         # 2. Contour Extraction
         print("Extracting contours...")
-        contours = extract_contours(mask_path)
+        contours = self.contour_engine.extract_contours(mask_path)
         print(f"Extracted {len(contours)} contours.")
 
         # 3. Matching
@@ -141,9 +147,12 @@ if __name__ == "__main__":
     mask_path = data_dir / "sparse_0_mask.png"
 
     if image_path.exists() and mask_path.exists() and annotations_path.exists():
-        # Use Mock OCR
+        # Use Mock OCR and CV2 Contour Engine
         ocr_engine = MockOCREngine(str(annotations_path))
-        pipeline = HeightExtractionPipeline(ocr_engine=ocr_engine)
+        contour_engine = CV2ContourEngine()
+        pipeline = HeightExtractionPipeline(
+            ocr_engine=ocr_engine, contour_engine=contour_engine
+        )
 
         contours, heights = pipeline.run(
             str(image_path), str(mask_path), drop_ratio=0.2

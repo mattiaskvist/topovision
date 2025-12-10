@@ -5,7 +5,7 @@ import math
 import cv2
 import numpy as np
 
-from .matcher import min_distance_to_contour
+from .matcher import calculate_centroid, min_distance_to_contour
 
 
 def build_adjacency_graph(
@@ -71,15 +71,21 @@ def infer_missing_heights(
     known_heights: dict[int, float],
     adjacency: dict[int, set[int]],
 ) -> dict[int, float]:
-    """Infers missing heights based on known heights and adjacency.
+    """Infers missing heights based on known heights and spatial gradients.
 
     Strategy:
-    1. Identify connected components.
-    2. For each component, find 'gradients' (pairs of neighbors with known heights).
-    3. Determine the contour interval.
-    4. Interpolate/Extrapolate.
+    1. Calculate centroids for all contours.
+    2. Determine contour interval.
+    3. Propagate heights using spatial gradient:
+       - If we know H(A) and H(B), and C is adjacent to B and "in the same direction"
+         as A->B, then H(C) should follow the gradient.
     """
     inferred = known_heights.copy()
+    centroids = {}
+    for idx, cnt in enumerate(contours):
+        # cnt is (N, 1, 2)
+        points = [(p[0][0], p[0][1]) for p in cnt]
+        centroids[idx] = calculate_centroid(points)
 
     # 1. Find Contour Interval
     intervals = []
@@ -92,28 +98,9 @@ def infer_missing_heights(
                     intervals.append(diff)
 
     interval = 10.0 if not intervals else min(intervals)
-
     print(f"Estimated Contour Interval: {interval}")
 
     # 2. Propagation
-    # We use a queue for BFS propagation
-    _queue = list(known_heights.keys())
-    _visited = set(known_heights.keys())
-
-    # This simple BFS assumes we know the direction (up/down).
-    # But we don't. We only know the interval.
-    # We need to anchor it.
-
-    # Better approach: Linear Interpolation between knowns.
-    # Find paths between known nodes.
-
-    # Let's try a relaxation approach?
-    # Or just simple: if a node has TWO known neighbors, check if it fits in between.
-
-    # Let's implement a "Gradient Flow" approach.
-    # If we have A(100) -- B(?) -- C(120), then B is likely 110.
-
-    # Iterative pass:
     changed = True
     while changed:
         changed = False
@@ -126,46 +113,62 @@ def infer_missing_heights(
             neighbors = list(adjacency[i])
             known_neighbors = [n for n in neighbors if n in inferred]
 
+            if not known_neighbors:
+                continue
+
+            # Case 1: Interpolation (Between two knowns)
             if len(known_neighbors) >= 2:
-                # Interpolate
-                # If we have neighbors with 100 and 120, we are likely 110.
                 vals = [inferred[n] for n in known_neighbors]
                 avg = sum(vals) / len(vals)
-
-                # Snap to nearest interval multiple?
-                # E.g. if avg is 110 and interval is 10, keep 110.
-                # If avg is 105, maybe 100 or 110?
-                # For now, just take average.
+                # Snap to nearest interval? For now, just avg.
                 inferred[i] = avg
                 changed = True
+                continue
 
-            elif len(known_neighbors) == 1:
-                # Extrapolate?
-                # Only if we have a "direction" from a previous node.
-                # This is risky without more info.
-                # But if we have A(100) -- B(110) -- C(?), C is likely 120.
-                n = known_neighbors[0]
-                n_neighbors = adjacency[n]
-                n_known_neighbors = [
-                    nn for nn in n_neighbors if nn in inferred and nn != i
-                ]
+            # Case 2: Extrapolation (Spatial Gradient)
+            # We have one known neighbor 'n'.
+            # We need a 'prev' neighbor of 'n' to establish a gradient.
+            n = known_neighbors[0]
+            n_neighbors = adjacency[n]
+            n_known_neighbors = [nn for nn in n_neighbors if nn in inferred and nn != i]
 
-                if n_known_neighbors:
-                    # We have a chain: nn -> n -> i
-                    # Gradient = inferred[n] - inferred[nn]
-                    # inferred[i] = inferred[n] + Gradient
-                    # But we need to be careful about branching.
-                    # Let's just take the first one for now.
-                    nn = n_known_neighbors[0]
-                    gradient = inferred[n] - inferred[nn]
+            if n_known_neighbors:
+                # Use the best aligned neighbor
+                best_nn = None
+                max_alignment = -1.0
 
-                    # Limit gradient to reasonable values (e.g. +/- interval)
-                    if abs(gradient) > interval * 1.5:
-                        # Maybe a jump, or maybe just far away.
-                        # Normalize to interval
-                        gradient = math.copysign(interval, gradient)
+                # Vector n -> i
+                vec_ni = np.array(centroids[i]) - np.array(centroids[n])
+                norm_ni = np.linalg.norm(vec_ni)
+                if norm_ni == 0:
+                    continue
+                vec_ni /= norm_ni
 
-                    inferred[i] = inferred[n] + gradient
-                    changed = True
+                for nn in n_known_neighbors:
+                    # Vector nn -> n
+                    vec_nn_n = np.array(centroids[n]) - np.array(centroids[nn])
+                    norm_nn_n = np.linalg.norm(vec_nn_n)
+                    if norm_nn_n == 0:
+                        continue
+                    vec_nn_n /= norm_nn_n
+
+                    # Dot product to check alignment
+                    alignment = np.dot(vec_nn_n, vec_ni)
+
+                    # We want alignment close to 1 (straight line)
+                    if alignment > max_alignment:
+                        max_alignment = alignment
+                        best_nn = nn
+
+                # Threshold for alignment (e.g., > 0 means generally same direction)
+                if best_nn is not None and max_alignment > 0.5:
+                    gradient = inferred[n] - inferred[best_nn]
+
+                    # Normalize gradient magnitude to interval
+                    # (Assuming step is always 1 interval)
+                    if gradient != 0:
+                        step = math.copysign(interval, gradient)
+                        inferred[i] = inferred[n] + step
+                        changed = True
 
     return inferred

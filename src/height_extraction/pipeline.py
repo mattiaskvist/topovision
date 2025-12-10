@@ -21,13 +21,14 @@ class HeightExtractionPipeline:
         self.ocr_engine = ocr_engine or PaddleOCREngine()
 
     def run(
-        self, image_path: str, mask_path: str
+        self, image_path: str, mask_path: str, drop_ratio: float = 0.0
     ) -> tuple[list[np.ndarray], dict[int, float]]:
         """Runs the pipeline.
 
         Args:
             image_path: Path to the original image.
             mask_path: Path to the binary mask of lines.
+            drop_ratio: Ratio of text detections to drop (for testing inference).
 
         Returns:
             Tuple of (contours, height_map) where height_map maps contour idx to height.
@@ -38,6 +39,14 @@ class HeightExtractionPipeline:
         print("Running OCR...")
         detections = self.ocr_engine.extract_with_polygons(image_path)
         print(f"Found {len(detections)} text detections.")
+
+        if drop_ratio > 0:
+            import random
+
+            random.seed(42)  # Deterministic for testing
+            num_keep = int(len(detections) * (1 - drop_ratio))
+            detections = random.sample(detections, num_keep)
+            print(f"Dropped {drop_ratio:.0%} of detections. Keeping {len(detections)}.")
 
         # 2. Contour Extraction
         print("Extracting contours...")
@@ -136,7 +145,9 @@ if __name__ == "__main__":
         ocr_engine = MockOCREngine(str(annotations_path))
         pipeline = HeightExtractionPipeline(ocr_engine=ocr_engine)
 
-        contours, heights = pipeline.run(str(image_path), str(mask_path))
+        contours, heights = pipeline.run(
+            str(image_path), str(mask_path), drop_ratio=0.2
+        )
 
         output_path = (
             project_root / "output" / "height_extraction" / "sparse_0_result.png"

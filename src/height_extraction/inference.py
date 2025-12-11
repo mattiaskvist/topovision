@@ -66,19 +66,57 @@ def build_adjacency_graph(
     return adj
 
 
+def build_hierarchy(contours: list[np.ndarray]) -> dict[int, int]:
+    """Builds a hierarchy of contours.
+
+    Returns:
+        Dictionary mapping contour index to its parent contour index (or -1 if none).
+    """
+    hierarchy = {}
+    for i, cnt_i in enumerate(contours):
+        parent = -1
+        # Find the smallest contour that contains cnt_i
+        min_area = float("inf")
+
+        # Centroid of i
+        moments = cv2.moments(cnt_i)
+        if moments["m00"] == 0:
+            cx, cy = 0, 0
+        else:
+            cx = int(moments["m10"] / moments["m00"])
+            cy = int(moments["m01"] / moments["m00"])
+
+        for j, cnt_j in enumerate(contours):
+            if i == j:
+                continue
+
+            # Check if i is inside j
+            # pointPolygonTest returns > 0 if inside
+            if cv2.pointPolygonTest(cnt_j, (cx, cy), False) > 0:
+                area = cv2.contourArea(cnt_j)
+                if area < min_area:
+                    min_area = area
+                    parent = j
+
+        hierarchy[i] = parent
+    return hierarchy
+
+
 def infer_missing_heights(
     contours: list[np.ndarray],
     known_heights: dict[int, float],
     adjacency: dict[int, set[int]],
 ) -> dict[int, float]:
-    """Infers missing heights based on known heights and spatial gradients.
+    """Infers missing heights based on known heights, spatial gradients, and nesting.
 
     Strategy:
     1. Calculate centroids for all contours.
     2. Determine contour interval.
-    3. Propagate heights using spatial gradient:
-       - If we know H(A) and H(B), and C is adjacent to B and "in the same direction"
-         as A->B, then H(C) should follow the gradient.
+    3. Build hierarchy (nesting).
+    4. Propagate heights:
+       - Interpolation (between two knowns).
+       - Spatial Gradient (extrapolation along a line).
+       - Nesting Logic (Hill/Depression assumption).
     """
     inferred = known_heights.copy()
     centroids = {}
@@ -100,7 +138,10 @@ def infer_missing_heights(
     interval = 10.0 if not intervals else min(intervals)
     print(f"Estimated Contour Interval: {interval}")
 
-    # 2. Propagation
+    # 2. Build Hierarchy
+    hierarchy = build_hierarchy(contours)
+
+    # 3. Propagation
     changed = True
     while changed:
         changed = False
@@ -127,10 +168,13 @@ def infer_missing_heights(
 
             # Case 2: Extrapolation (Spatial Gradient)
             # We have one known neighbor 'n'.
-            # We need a 'prev' neighbor of 'n' to establish a gradient.
             n = known_neighbors[0]
+
+            # Try Spatial Gradient first
             n_neighbors = adjacency[n]
             n_known_neighbors = [nn for nn in n_neighbors if nn in inferred and nn != i]
+
+            gradient_found = False
 
             if n_known_neighbors:
                 # Use the best aligned neighbor
@@ -140,35 +184,76 @@ def infer_missing_heights(
                 # Vector n -> i
                 vec_ni = np.array(centroids[i]) - np.array(centroids[n])
                 norm_ni = np.linalg.norm(vec_ni)
-                if norm_ni == 0:
-                    continue
-                vec_ni /= norm_ni
+                if norm_ni > 0:
+                    vec_ni /= norm_ni
 
-                for nn in n_known_neighbors:
-                    # Vector nn -> n
-                    vec_nn_n = np.array(centroids[n]) - np.array(centroids[nn])
-                    norm_nn_n = np.linalg.norm(vec_nn_n)
-                    if norm_nn_n == 0:
-                        continue
-                    vec_nn_n /= norm_nn_n
+                    for nn in n_known_neighbors:
+                        # Vector nn -> n
+                        vec_nn_n = np.array(centroids[n]) - np.array(centroids[nn])
+                        norm_nn_n = np.linalg.norm(vec_nn_n)
+                        if norm_nn_n == 0:
+                            continue
+                        vec_nn_n /= norm_nn_n
 
-                    # Dot product to check alignment
-                    alignment = np.dot(vec_nn_n, vec_ni)
+                        # Dot product to check alignment
+                        alignment = np.dot(vec_nn_n, vec_ni)
 
-                    # We want alignment close to 1 (straight line)
-                    if alignment > max_alignment:
-                        max_alignment = alignment
-                        best_nn = nn
+                        # We want alignment close to 1 (straight line)
+                        if alignment > max_alignment:
+                            max_alignment = alignment
+                            best_nn = nn
 
-                # Threshold for alignment (e.g., > 0 means generally same direction)
-                if best_nn is not None and max_alignment > 0.5:
-                    gradient = inferred[n] - inferred[best_nn]
+                    # Threshold for alignment (e.g., > 0 means generally same direction)
+                    if best_nn is not None and max_alignment > 0.5:
+                        gradient = inferred[n] - inferred[best_nn]
 
-                    # Normalize gradient magnitude to interval
-                    # (Assuming step is always 1 interval)
-                    if gradient != 0:
-                        step = math.copysign(interval, gradient)
-                        inferred[i] = inferred[n] + step
-                        changed = True
+                        # Normalize gradient magnitude to interval
+                        if gradient != 0:
+                            step = math.copysign(interval, gradient)
+                            inferred[i] = inferred[n] + step
+                            changed = True
+                            gradient_found = True
+
+            if gradient_found:
+                continue
+
+            # Case 3: Nesting Logic (Hill/Depression)
+            # If i is inside n, or n is inside i
+            parent_i = hierarchy.get(i, -1)
+            parent_n = hierarchy.get(n, -1)
+
+            is_nested = (parent_i == n) or (parent_n == i)
+
+            if is_nested:
+                # Check trend of n relative to its neighbors (or parent)
+                # If n is higher than its parent/neighbors,
+                # and i is inside n -> Hill -> i > n
+                # If n is lower -> Depression -> i < n
+
+                # Find a reference for n (parent or another neighbor)
+                ref_n = -1
+                if parent_n != -1 and parent_n in inferred:
+                    ref_n = parent_n
+                elif n_known_neighbors:
+                    ref_n = n_known_neighbors[0]  # Just pick one
+
+                if ref_n != -1:
+                    trend = inferred[n] - inferred[ref_n]
+                    if trend > 0:
+                        # n is higher than ref -> Rising -> i should be higher
+                        inferred[i] = inferred[n] + interval
+                    else:
+                        # n is lower than ref -> Falling -> i should be lower
+                        inferred[i] = inferred[n] - interval
+                else:
+                    # No reference, assume Hill (rising)
+                    # If i is inside n, i > n
+                    if parent_i == n:
+                        inferred[i] = inferred[n] + interval
+                    else:
+                        # n is inside i, so i is outer -> i < n
+                        inferred[i] = inferred[n] - interval
+
+                changed = True
 
     return inferred

@@ -155,7 +155,7 @@ if __name__ == "__main__":
         )
 
         contours, heights = pipeline.run(
-            str(image_path), str(mask_path), drop_ratio=0.2
+            str(image_path), str(mask_path), drop_ratio=0.0
         )
 
         output_path = (

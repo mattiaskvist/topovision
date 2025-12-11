@@ -14,6 +14,7 @@ This module extracts height curves from topographical maps by combining OCR resu
 
     - Matches OCR text detections to the nearest contour line.
     - Uses Euclidean distance from the text centroid to the polyline segments.
+    - **Orientation Check**: Verifies that the text rotation aligns with the local tangent of the contour line. Matches are discarded if the angle difference exceeds 30 degrees.
 
 3.  **Inference** (`inference.py`):
 

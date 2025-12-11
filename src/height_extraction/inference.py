@@ -53,7 +53,7 @@ def build_adjacency_graph(
 
             dist = float("inf")
             for pt in sample_points:
-                d = min_distance_to_contour(tuple(pt[0]), cnt_j)
+                d, _ = min_distance_to_contour(tuple(pt[0]), cnt_j)
                 if d < dist:
                     dist = d
                 if dist < max_dist:

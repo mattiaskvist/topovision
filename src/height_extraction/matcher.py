@@ -37,10 +37,24 @@ def point_line_segment_distance(
     return math.hypot(px - closest_x, py - closest_y)
 
 
-def min_distance_to_contour(point: tuple[float, float], contour: np.ndarray) -> float:
-    """Calculates the minimum distance from a point to a contour (polyline)."""
+def calculate_angle(p1: tuple[float, float], p2: tuple[float, float]) -> float:
+    """Calculates the angle of the vector p1->p2 in degrees."""
+    dx = p2[0] - p1[0]
+    dy = p2[1] - p1[1]
+    return math.degrees(math.atan2(dy, dx))
+
+
+def min_distance_to_contour(
+    point: tuple[float, float], contour: np.ndarray
+) -> tuple[float, float]:
+    """Calculates the minimum distance from a point to a contour and the tangent angle.
+
+    Returns:
+        Tuple of (min_distance, tangent_angle_degrees)
+    """
     px, py = point
     min_dist = float("inf")
+    best_angle = 0.0
 
     # Contour shape is (N, 1, 2)
     pts = contour[:, 0, :]
@@ -51,8 +65,13 @@ def min_distance_to_contour(point: tuple[float, float], contour: np.ndarray) -> 
         dist = point_line_segment_distance(px, py, p1[0], p1[1], p2[0], p2[1])
         if dist < min_dist:
             min_dist = dist
+            # Calculate tangent of this segment
+            # We normalize angle to [-90, 90] because line direction doesn't matter
+            # relative to text (text could be upside down or not)
+            # Actually, let's keep full range and handle modulo 180 later
+            best_angle = calculate_angle(tuple(p1), tuple(p2))
 
-    return min_dist
+    return min_dist, best_angle
 
 
 def parse_height_text(text: str) -> float:
@@ -69,13 +88,15 @@ def match_text_to_contours(
     detections: list[DetectionResult],
     contours: list[np.ndarray],
     max_distance: float = 50.0,
+    max_angle_diff: float = 30.0,
 ) -> dict[int, float]:
-    """Matches OCR detections to the nearest contour lines.
+    """Matches OCR detections to the nearest contour lines with orientation check.
 
     Args:
         detections: List of OCR detection results.
         contours: List of contours (numpy arrays).
         max_distance: Maximum distance to consider a match valid.
+        max_angle_diff: Maximum angle difference (degrees) to consider a match valid.
 
     Returns:
         Dictionary mapping contour index to matched height value.
@@ -89,12 +110,25 @@ def match_text_to_contours(
 
         centroid = calculate_centroid(detection.polygon.points)
 
+        # Calculate text orientation from top edge (p0 -> p1)
+        # Polygon points are usually [top-left, top-right, bottom-right, bottom-left]
+        p0 = detection.polygon.points[0]
+        p1 = detection.polygon.points[1]
+        text_angle = calculate_angle(p0, p1)
+
         best_contour_idx = -1
         min_dist = float("inf")
 
         for idx, contour in enumerate(contours):
-            dist = min_distance_to_contour(centroid, contour)
-            if dist < min_dist:
+            dist, contour_angle = min_distance_to_contour(centroid, contour)
+
+            # Check angle difference
+            # We care about alignment, so modulo 180
+            diff = abs(text_angle - contour_angle) % 180
+            if diff > 90:
+                diff = 180 - diff
+
+            if dist < min_dist and diff <= max_angle_diff:
                 min_dist = dist
                 best_contour_idx = idx
 

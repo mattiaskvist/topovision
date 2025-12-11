@@ -1889,10 +1889,12 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "easyocr" },
+    { name = "matplotlib" },
     { name = "paddleocr" },
     { name = "paddlepaddle" },
     { name = "pydantic" },
     { name = "pytesseract" },
+    { name = "scipy" },
 ]
 
 [package.dev-dependencies]
@@ -1909,10 +1911,12 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "easyocr", specifier = ">=1.7.2" },
+    { name = "matplotlib", specifier = ">=3.10.7" },
     { name = "paddleocr", specifier = ">=3.3.2" },
     { name = "paddlepaddle", specifier = ">=3.2.2" },
     { name = "pydantic", specifier = ">=2.12.5" },
     { name = "pytesseract", specifier = ">=0.3.13" },
+    { name = "scipy", specifier = ">=1.16.3" },
 ]
 
 [package.metadata.requires-dev]

@@ -7,6 +7,9 @@ import numpy as np
 
 from OCR.engine.ocr_engine import OCREngine
 from OCR.engine.paddleocr_engine import PaddleOCREngine
+from visualization.plotter import plot_3d_surface
+from visualization.point_cloud import contours_to_points
+from visualization.surface import interpolate_surface
 
 from .engine.contour_engine import ContourExtractionEngine
 from .engine.cv2_contour_engine import CV2ContourEngine
@@ -162,5 +165,22 @@ if __name__ == "__main__":
             project_root / "output" / "height_extraction" / "sparse_0_result.png"
         )
         pipeline.visualize(str(image_path), contours, heights, str(output_path))
+
+        # 3D Visualization
+        print("Generating 3D visualization...")
+        x, y, z = contours_to_points(contours, heights)
+
+        # Interpolate surface
+        # Use image dimensions for grid
+        img = cv2.imread(str(image_path))
+        h, w = img.shape[:2]
+
+        grid_x, grid_y, grid_z = interpolate_surface(x, y, z, (h, w), method="cubic")
+
+        output_3d_path = (
+            project_root / "output" / "height_extraction" / "sparse_0_3d.png"
+        )
+        plot_3d_surface(grid_x, grid_y, grid_z, str(output_3d_path))
+
     else:
         print("Data not found.")

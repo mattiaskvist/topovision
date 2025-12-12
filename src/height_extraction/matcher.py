@@ -8,7 +8,14 @@ from OCR.engine.ocr_engine import DetectionResult
 
 
 def calculate_centroid(polygon_points: list[tuple[int, int]]) -> tuple[float, float]:
-    """Calculates the centroid of a polygon."""
+    """Calculates the centroid of a polygon.
+
+    Args:
+        polygon_points: List of (x, y) coordinates defining the polygon.
+
+    Returns:
+        A tuple (x, y) representing the centroid coordinates.
+    """
     x_coords = [p[0] for p in polygon_points]
     y_coords = [p[1] for p in polygon_points]
     return sum(x_coords) / len(x_coords), sum(y_coords) / len(y_coords)
@@ -17,8 +24,19 @@ def calculate_centroid(polygon_points: list[tuple[int, int]]) -> tuple[float, fl
 def point_line_segment_distance(
     px: float, py: float, x1: float, y1: float, x2: float, y2: float
 ) -> float:
-    """Calculates the minimum distance from a point (px, py) to a line segment."""
-    # Vector from p1 to p2
+    """Calculates the minimum distance from a point to a line segment.
+
+    Args:
+        px: X-coordinate of the point.
+        py: Y-coordinate of the point.
+        x1: X-coordinate of the first segment endpoint.
+        y1: Y-coordinate of the first segment endpoint.
+        x2: X-coordinate of the second segment endpoint.
+        y2: Y-coordinate of the second segment endpoint.
+
+    Returns:
+        The minimum distance from the point to the line segment.
+    """
     dx = x2 - x1
     dy = y2 - y1
     if dx == 0 and dy == 0:
@@ -27,10 +45,8 @@ def point_line_segment_distance(
     # Project point onto line (parameter t)
     t = ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy)
 
-    # Clamp t to segment [0, 1]
     t = max(0, min(1, t))
 
-    # Closest point on segment
     closest_x = x1 + t * dx
     closest_y = y1 + t * dy
 
@@ -38,7 +54,15 @@ def point_line_segment_distance(
 
 
 def calculate_angle(p1: tuple[float, float], p2: tuple[float, float]) -> float:
-    """Calculates the angle of the vector p1->p2 in degrees."""
+    """Calculates the angle of the vector p1->p2 in degrees.
+
+    Args:
+        p1: The starting point (x, y).
+        p2: The ending point (x, y).
+
+    Returns:
+        The angle in degrees.
+    """
     dx = p2[0] - p1[0]
     dy = p2[1] - p1[1]
     return math.degrees(math.atan2(dy, dx))
@@ -49,8 +73,14 @@ def min_distance_to_contour(
 ) -> tuple[float, float]:
     """Calculates the minimum distance from a point to a contour and the tangent angle.
 
+    Args:
+        point: The point (x, y) to measure distance from.
+        contour: The contour array of shape (N, 1, 2).
+
     Returns:
-        Tuple of (min_distance, tangent_angle_degrees)
+        A tuple containing:
+            - The minimum distance from the point to the contour.
+            - The angle of the tangent at the closest point on the contour.
     """
     px, py = point
     min_dist = float("inf")
@@ -74,9 +104,15 @@ def min_distance_to_contour(
     return min_dist, best_angle
 
 
-def parse_height_text(text: str) -> float:
-    """Parses height text to float, handling suffixes."""
-    # Remove common non-numeric chars except dot and minus
+def parse_height_text(text: str) -> float | None:
+    """Parses height text to float, handling suffixes.
+
+    Args:
+        text: The text string containing the height value.
+
+    Returns:
+        The parsed height as a float, or None if parsing fails.
+    """
     cleaned = "".join(c for c in text if c.isdigit() or c in ".-")
     try:
         return float(cleaned)

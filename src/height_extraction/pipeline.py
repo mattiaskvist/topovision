@@ -15,14 +15,25 @@ from .matcher import match_text_to_contours
 
 
 class HeightExtractionPipeline:
-    """Pipeline to extract height curves from maps."""
+    """Pipeline to extract height curves from maps.
+
+    Attributes:
+        ocr_engine: Engine for OCR detection.
+        contour_engine: Engine for contour extraction.
+    """
 
     def __init__(
         self,
         ocr_engine: OCREngine = None,
         contour_engine: ContourExtractionEngine = None,
     ):
-        """Initializes the pipeline."""
+        """Initializes the pipeline.
+
+        Args:
+            ocr_engine: Optional custom OCR engine. Defaults to PaddleOCREngine.
+            contour_engine: Optional custom contour engine. Defaults to
+                CV2ContourEngine.
+        """
         self.ocr_engine = ocr_engine or PaddleOCREngine()
         self.contour_engine = contour_engine or CV2ContourEngine()
 
@@ -37,7 +48,9 @@ class HeightExtractionPipeline:
             drop_ratio: Ratio of text detections to drop (for testing inference).
 
         Returns:
-            Tuple of (contours, height_map) where height_map maps contour idx to height.
+            A tuple containing:
+                - List of extracted contours (numpy arrays).
+                - Dictionary mapping contour index to inferred height.
         """
         print(f"Processing {image_path}...")
 
@@ -66,7 +79,6 @@ class HeightExtractionPipeline:
 
         # 4. Inference
         print("Inferring missing heights...")
-        # Need image shape for adjacency
         img = cv2.imread(image_path)
         if img is None:
             # Fallback if image read fails (shouldn't happen if OCR worked)
@@ -92,17 +104,22 @@ class HeightExtractionPipeline:
         height_map: dict[int, float],
         output_path: str,
     ):
-        """Visualizes the results."""
+        """Visualizes the results by drawing contours and heights on the image.
+
+        Args:
+            image_path: Path to the original image.
+            contours: List of contours.
+            height_map: Dictionary mapping contour index to height.
+            output_path: Path to save the visualization.
+        """
         img = cv2.imread(image_path)
         if img is None:
             return
 
-        # Draw contours
         for idx, contour in enumerate(contours):
             height = height_map.get(idx)
 
             if height is not None:
-                # Color based on height (simple cycle)
                 color = (0, 255, 0)  # Green for known/inferred
                 label = f"{height:.1f}"
             else:
@@ -111,7 +128,6 @@ class HeightExtractionPipeline:
 
             cv2.drawContours(img, [contour], -1, color, 2)
 
-            # Draw label at the first point of the contour
             pt = contour[0][0]
             x = max(10, min(img.shape[1] - 50, pt[0]))
             y = max(20, min(img.shape[0] - 10, pt[1]))

@@ -6,7 +6,10 @@ import numpy as np
 
 
 class ContourExtractionEngine(ABC):
-    """Abstract base class for contour extraction engines."""
+    """Abstract base class for contour extraction engines.
+
+    This class defines the interface for extracting contours from binary masks.
+    """
 
     @abstractmethod
     def extract_contours(self, mask_path: str) -> list[np.ndarray]:

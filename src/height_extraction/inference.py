@@ -13,8 +13,13 @@ def build_adjacency_graph(
 ) -> dict[int, set[int]]:
     """Builds adjacency graph with nodes as contour idx and edges for spatial proximity.
 
-    This uses a simple distance-based approach. A more robust approach might
-    use dilation or Voronoi diagrams.
+    Args:
+        contours: List of contours.
+        image_shape: Shape of the image (height, width).
+        max_dist: Maximum distance between contours to consider them adjacent.
+
+    Returns:
+        Adjacency list mapping contour index to a set of adjacent contour indices.
     """
     adj = {i: set() for i in range(len(contours))}
 
@@ -22,22 +27,12 @@ def build_adjacency_graph(
     # For larger N, we need a spatial index or the dilation method.
     for i in range(len(contours)):
         for j in range(i + 1, len(contours)):
-            # Check distance between contour i and j
-            # We can check min distance between their points
-            # To speed up, check bounding box overlap/distance first
-
-            # Simple check: min distance between any points
-            # We can reuse min_distance_to_contour but that takes a point.
-            # Let's just take a subsample of points from i and check dist to j.
-
             cnt_i = contours[i]
             cnt_j = contours[j]
 
-            # Quick bbox check
             x, y, w, h = cv2.boundingRect(cnt_i)
             x2, y2, w2, h2 = cv2.boundingRect(cnt_j)
 
-            # Expand bbox by max_dist
             if (
                 x > x2 + w2 + max_dist
                 or x2 > x + w + max_dist
@@ -47,7 +42,6 @@ def build_adjacency_graph(
                 continue
 
             # Detailed check
-            # Sample points from i
             step = max(1, len(cnt_i) // 20)
             sample_points = cnt_i[::step]
 
@@ -67,7 +61,10 @@ def build_adjacency_graph(
 
 
 def build_hierarchy(contours: list[np.ndarray]) -> dict[int, int]:
-    """Builds a hierarchy of contours.
+    """Builds a hierarchy of contours to determine nesting.
+
+    Args:
+        contours: List of contours.
 
     Returns:
         Dictionary mapping contour index to its parent contour index (or -1 if none).
@@ -78,7 +75,6 @@ def build_hierarchy(contours: list[np.ndarray]) -> dict[int, int]:
         # Find the smallest contour that contains cnt_i
         min_area = float("inf")
 
-        # Centroid of i
         moments = cv2.moments(cnt_i)
         if moments["m00"] == 0:
             cx, cy = 0, 0
@@ -90,7 +86,6 @@ def build_hierarchy(contours: list[np.ndarray]) -> dict[int, int]:
             if i == j:
                 continue
 
-            # Check if i is inside j
             # pointPolygonTest returns > 0 if inside
             if cv2.pointPolygonTest(cnt_j, (cx, cy), False) > 0:
                 area = cv2.contourArea(cnt_j)
@@ -109,14 +104,13 @@ def infer_missing_heights(
 ) -> dict[int, float]:
     """Infers missing heights based on known heights, spatial gradients, and nesting.
 
-    Strategy:
-    1. Calculate centroids for all contours.
-    2. Determine contour interval.
-    3. Build hierarchy (nesting).
-    4. Propagate heights:
-       - Interpolation (between two knowns).
-       - Spatial Gradient (extrapolation along a line).
-       - Nesting Logic (Hill/Depression assumption).
+    Args:
+        contours: List of contours.
+        known_heights: Dictionary of known heights.
+        adjacency: Adjacency graph of contours.
+
+    Returns:
+        Dictionary mapping contour index to inferred height (including known heights).
     """
     inferred = known_heights.copy()
     centroids = {}

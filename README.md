@@ -1,6 +1,6 @@
 # TopoVision
 
-KTH AI Society Research project about extracting topographical data using computer vision
+KTH AI Society Research project about extracting topographic data using computer vision
 
 ## Development Setup
 
@@ -36,6 +36,7 @@ uv run python src/data_generation/perlin_noise_generator.py
 
 The generated data will be saved in `data/synthetic/perlin_noise`.
 The output includes:
+
 - **Images:** Synthetic contour maps with text labels.
 - **Masks:** Segmentation masks showing only the contour lines without text labels (images ending in `_mask.png`), suitable for training segmentation models.
 - **Debug Images:** Visualizations of the bounding boxes and polygons.

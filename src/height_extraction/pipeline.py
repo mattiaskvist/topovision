@@ -134,7 +134,9 @@ class HeightExtractionPipeline:
         """
         img = cv2.imread(output.image_path)
         if img is None:
-            return
+            raise FileNotFoundError(
+                f"Could not read image at path: {output.image_path}"
+            )
 
         for contour_line in output.contours:
             # Convert points back to numpy array for cv2.drawContours

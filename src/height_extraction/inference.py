@@ -87,15 +87,18 @@ def build_hierarchy(contours: list[np.ndarray]) -> dict[int, int]:
             cx = int(moments["m10"] / moments["m00"])
             cy = int(moments["m01"] / moments["m00"])
 
+        area_i = cv2.contourArea(cnt_i)
+
         for j, cnt_j in enumerate(contours):
             if i == j:
                 continue
 
             # pointPolygonTest returns > 0 if inside
             if cv2.pointPolygonTest(cnt_j, (cx, cy), False) > 0:
-                area = cv2.contourArea(cnt_j)
-                if area < min_area:
-                    min_area = area
+                area_j = cv2.contourArea(cnt_j)
+                # Parent must be larger than child
+                if area_j > area_i and area_j < min_area:
+                    min_area = area_j
                     parent = j
 
         hierarchy[i] = parent

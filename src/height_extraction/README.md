@@ -59,3 +59,32 @@ from height_extraction.engine.my_custom_engine import MyCustomEngine
 contour_engine = MyCustomEngine()
 pipeline = HeightExtractionPipeline(contour_engine=contour_engine)
 ```
+
+## Verification Results
+
+The pipeline has been tested on synthetic data (`data/synthetic/perlin_noise/`).
+
+**Example Run Output:**
+
+```text
+Processing .../data/synthetic/perlin_noise/sparse_0_image.png...
+Running OCR...
+Found 8 text detections.
+Extracting contours...
+Extracted 11 contours.
+Matching text to contours...
+Matched 8 contours to heights.
+Inferring missing heights...
+Adjacency graph has 12 edges.
+Estimated Contour Interval: 75.0
+Inferred heights for 10 contours (total).
+Saved visualization to .../output/height_extraction/sparse_0_result.png
+```
+
+This confirms that the pipeline successfully:
+
+1.  Detects text using the Mock OCR engine.
+2.  Extracts contours using the Mock Contour Engine (OpenCV).
+3.  Matches text to contours.
+4.  Infers missing heights (e.g., 10 total heights from 8 knowns).
+5.  Generates a visualization.

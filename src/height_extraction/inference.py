@@ -7,15 +7,20 @@ import numpy as np
 
 from .matcher import calculate_centroid, min_distance_to_contour
 
+# Constants
+ADJACENCY_SAMPLE_STEP_DIVISOR = 20
+
 
 def build_adjacency_graph(
-    contours: list[np.ndarray], image_shape: tuple[int, int], max_dist: float = 20.0
+    contours: list[np.ndarray],
+    _image_shape: tuple[int, int],
+    max_dist: float = 20.0,
 ) -> dict[int, set[int]]:
     """Builds adjacency graph with nodes as contour idx and edges for spatial proximity.
 
     Args:
         contours: List of contours.
-        image_shape: Shape of the image (height, width).
+        _image_shape: Shape of the image (height, width) (not used).
         max_dist: Maximum distance between contours to consider them adjacent.
 
     Returns:
@@ -42,7 +47,7 @@ def build_adjacency_graph(
                 continue
 
             # Detailed check
-            step = max(1, len(cnt_i) // 20)
+            step = max(1, len(cnt_i) // ADJACENCY_SAMPLE_STEP_DIVISOR)
             sample_points = cnt_i[::step]
 
             dist = float("inf")
@@ -101,6 +106,8 @@ def infer_missing_heights(
     contours: list[np.ndarray],
     known_heights: dict[int, float],
     adjacency: dict[int, set[int]],
+    default_contour_interval: float = 10.0,
+    gradient_alignment_threshold: float = 0.5,
 ) -> dict[int, float]:
     """Infers missing heights based on known heights, spatial gradients, and nesting.
 
@@ -108,6 +115,10 @@ def infer_missing_heights(
         contours: List of contours.
         known_heights: Dictionary of known heights.
         adjacency: Adjacency graph of contours.
+        default_contour_interval: Default height interval used if one can't be inferred
+            from known heights.
+        gradient_alignment_threshold: Threshold the dot product of vectors to consider
+            them aligned for gradient extrapolation.
 
     Returns:
         Dictionary mapping contour index to inferred height (including known heights).
@@ -129,7 +140,7 @@ def infer_missing_heights(
                 if diff > 0:
                     intervals.append(diff)
 
-    interval = 10.0 if not intervals else min(intervals)
+    interval = default_contour_interval if not intervals else min(intervals)
     print(f"Estimated Contour Interval: {interval}")
 
     # 2. Build Hierarchy
@@ -198,7 +209,10 @@ def infer_missing_heights(
                             best_nn = nn
 
                     # Threshold for alignment (e.g., > 0 means generally same direction)
-                    if best_nn is not None and max_alignment > 0.5:
+                    if (
+                        best_nn is not None
+                        and max_alignment > gradient_alignment_threshold
+                    ):
                         gradient = inferred[n] - inferred[best_nn]
 
                         # Normalize gradient magnitude to interval

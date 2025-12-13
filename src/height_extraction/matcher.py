@@ -15,7 +15,13 @@ def calculate_centroid(polygon_points: list[tuple[int, int]]) -> tuple[float, fl
 
     Returns:
         A tuple (x, y) representing the centroid coordinates.
+
+    Raises:
+        ValueError: If polygon_points is empty.
     """
+    if not polygon_points:
+        raise ValueError("polygon_points must not be empty")
+
     x_coords = [p[0] for p in polygon_points]
     y_coords = [p[1] for p in polygon_points]
     return sum(x_coords) / len(x_coords), sum(y_coords) / len(y_coords)
@@ -96,9 +102,6 @@ def min_distance_to_contour(
         if dist < min_dist:
             min_dist = dist
             # Calculate tangent of this segment
-            # We normalize angle to [-90, 90] because line direction doesn't matter
-            # relative to text (text could be upside down or not)
-            # Actually, let's keep full range and handle modulo 180 later
             best_angle = calculate_angle(tuple(p1), tuple(p2))
 
     return min_dist, best_angle
@@ -125,6 +128,7 @@ def match_text_to_contours(
     contours: list[np.ndarray],
     max_distance: float = 50.0,
     max_angle_diff: float = 30.0,
+    angle_check_threshold: float = 90.0,
 ) -> dict[int, float]:
     """Matches OCR detections to the nearest contour lines with orientation check.
 
@@ -133,6 +137,7 @@ def match_text_to_contours(
         contours: List of contours (numpy arrays).
         max_distance: Maximum distance to consider a match valid.
         max_angle_diff: Maximum angle difference (degrees) to consider a match valid.
+        angle_check_threshold: Threshold for angle difference check.
 
     Returns:
         Dictionary mapping contour index to matched height value.
@@ -161,7 +166,7 @@ def match_text_to_contours(
             # Check angle difference
             # We care about alignment, so modulo 180
             diff = abs(text_angle - contour_angle) % 180
-            if diff > 90:
+            if diff > angle_check_threshold:
                 diff = 180 - diff
 
             if dist < min_dist and diff <= max_angle_diff:

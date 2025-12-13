@@ -1,6 +1,7 @@
 """Main pipeline for height extraction."""
 
 import os
+import random
 
 import cv2
 import numpy as np
@@ -13,6 +14,14 @@ from OCR.engine.paddleocr_engine import PaddleOCREngine
 from .inference import build_adjacency_graph, infer_missing_heights
 from .matcher import match_text_to_contours
 from .schemas import ContourLine, HeightExtractionOutput
+
+# Constants
+CONTOUR_THICKNESS = 2
+TEXT_SCALE = 0.5
+TEXT_THICKNESS = 1
+TEXT_COLOR = (255, 0, 0)  # Blue
+KNOWN_CONTOUR_COLOR = (0, 255, 0)  # Green
+UNKNOWN_CONTOUR_COLOR = (0, 0, 255)  # Red
 
 
 class HeightExtractionPipeline:
@@ -59,8 +68,6 @@ class HeightExtractionPipeline:
         print(f"Found {len(detections)} text detections.")
 
         if drop_ratio > 0:
-            import random
-
             random.seed(42)  # Deterministic for testing
             num_keep = int(len(detections) * (1 - drop_ratio))
             detections = random.sample(detections, num_keep)
@@ -87,7 +94,7 @@ class HeightExtractionPipeline:
         else:
             h, w = img.shape[:2]
 
-        adjacency = build_adjacency_graph(contours, (h, w), max_dist=50.0)
+        adjacency = build_adjacency_graph(contours, (h, w))
         print(
             f"Adjacency graph has {sum(len(v) for v in adjacency.values()) // 2} edges."
         )
@@ -100,11 +107,13 @@ class HeightExtractionPipeline:
             points = [(int(p[0][0]), int(p[0][1])) for p in contour]
             height = final_heights.get(idx)
 
-            source = "unknown"
+            # Determine the source of the height value explicitly:
             if idx in known_heights:
                 source = "ocr"
             elif idx in final_heights:
                 source = "inference"
+            else:
+                source = "unknown"
 
             contour_lines.append(
                 ContourLine(id=idx, points=points, height=height, source=source)
@@ -132,13 +141,13 @@ class HeightExtractionPipeline:
             pts = np.array(contour_line.points, dtype=np.int32).reshape((-1, 1, 2))
 
             if contour_line.height is not None:
-                color = (0, 255, 0)  # Green for known/inferred
+                color = KNOWN_CONTOUR_COLOR
                 label = f"{contour_line.height:.1f}"
             else:
-                color = (0, 0, 255)  # Red for unknown
+                color = UNKNOWN_CONTOUR_COLOR
                 label = "?"
 
-            cv2.drawContours(img, [pts], -1, color, 2)
+            cv2.drawContours(img, [pts], -1, color, CONTOUR_THICKNESS)
 
             pt = contour_line.points[0]
             x = max(10, min(img.shape[1] - 50, pt[0]))
@@ -149,13 +158,15 @@ class HeightExtractionPipeline:
                 label,
                 (x, y),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.5,
-                (255, 0, 0),  # Blue text
-                1,
+                TEXT_SCALE,
+                TEXT_COLOR,
+                TEXT_THICKNESS,
                 cv2.LINE_AA,
             )
 
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        dir_name = os.path.dirname(output_path)
+        if dir_name:
+            os.makedirs(dir_name, exist_ok=True)
         cv2.imwrite(output_path, img)
         print(f"Saved visualization to {output_path}")
 

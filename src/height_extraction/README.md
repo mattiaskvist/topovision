@@ -4,7 +4,7 @@ This module extracts height curves from topographical maps by combining OCR resu
 
 ## Components
 
-1.  **Contour Extraction** (`engine/`):
+1.  **Contour Extraction** (`src/contour/`):
 
     - **Abstraction**: `ContourExtractionEngine` (ABC) allows swapping extraction methods.
     - **Implementation**: `CV2ContourEngine` uses `cv2.findContours` and morphological closing.
@@ -65,12 +65,12 @@ class HeightExtractionOutput(BaseModel):
 
 To use a custom contour extraction method (e.g., a Deep Learning model):
 
-1.  Create a new class in `src/height_extraction/engine/` that inherits from `ContourExtractionEngine`.
+1.  Create a new class in `src/contour/engine/` that inherits from `ContourExtractionEngine`.
 2.  Implement the `extract_contours` method.
 3.  Pass an instance of your engine to the `HeightExtractionPipeline` constructor:
 
 ```python
-from height_extraction.engine.my_custom_engine import MyCustomEngine
+from contour.engine.my_custom_engine import MyCustomEngine
 
 contour_engine = MyCustomEngine()
 pipeline = HeightExtractionPipeline(contour_engine=contour_engine)

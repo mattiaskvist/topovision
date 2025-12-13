@@ -5,11 +5,11 @@ import os
 import cv2
 import numpy as np
 
+from contour.engine.contour_engine import ContourExtractionEngine
+from contour.engine.cv2_contour_engine import CV2ContourEngine
 from OCR.engine.ocr_engine import OCREngine
 from OCR.engine.paddleocr_engine import PaddleOCREngine
 
-from .engine.contour_engine import ContourExtractionEngine
-from .engine.cv2_contour_engine import CV2ContourEngine
 from .inference import build_adjacency_graph, infer_missing_heights
 from .matcher import match_text_to_contours
 from .schemas import ContourLine, HeightExtractionOutput

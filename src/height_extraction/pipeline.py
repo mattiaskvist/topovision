@@ -12,6 +12,7 @@ from .engine.contour_engine import ContourExtractionEngine
 from .engine.cv2_contour_engine import CV2ContourEngine
 from .inference import build_adjacency_graph, infer_missing_heights
 from .matcher import match_text_to_contours
+from .schemas import ContourLine, HeightExtractionOutput
 
 
 class HeightExtractionPipeline:
@@ -39,7 +40,7 @@ class HeightExtractionPipeline:
 
     def run(
         self, image_path: str, mask_path: str, drop_ratio: float = 0.0
-    ) -> tuple[list[np.ndarray], dict[int, float]]:
+    ) -> HeightExtractionOutput:
         """Runs the pipeline.
 
         Args:
@@ -48,9 +49,7 @@ class HeightExtractionPipeline:
             drop_ratio: Ratio of text detections to drop (for testing inference).
 
         Returns:
-            A tuple containing:
-                - List of extracted contours (numpy arrays).
-                - Dictionary mapping contour index to inferred height.
+            HeightExtractionOutput object containing extracted contours and metadata.
         """
         print(f"Processing {image_path}...")
 
@@ -95,40 +94,53 @@ class HeightExtractionPipeline:
         final_heights = infer_missing_heights(contours, known_heights, adjacency)
         print(f"Inferred heights for {len(final_heights)} contours (total).")
 
-        return contours, final_heights
+        # Convert to Pydantic models
+        contour_lines = []
+        for idx, contour in enumerate(contours):
+            points = [(int(p[0][0]), int(p[0][1])) for p in contour]
+            height = final_heights.get(idx)
+
+            source = "unknown"
+            if idx in known_heights:
+                source = "ocr"
+            elif idx in final_heights:
+                source = "inference"
+
+            contour_lines.append(
+                ContourLine(id=idx, points=points, height=height, source=source)
+            )
+
+        return HeightExtractionOutput(image_path=image_path, contours=contour_lines)
 
     def visualize(
         self,
-        image_path: str,
-        contours: list[np.ndarray],
-        height_map: dict[int, float],
+        output: HeightExtractionOutput,
         output_path: str,
     ):
         """Visualizes the results by drawing contours and heights on the image.
 
         Args:
-            image_path: Path to the original image.
-            contours: List of contours.
-            height_map: Dictionary mapping contour index to height.
+            output: The HeightExtractionOutput object to visualize.
             output_path: Path to save the visualization.
         """
-        img = cv2.imread(image_path)
+        img = cv2.imread(output.image_path)
         if img is None:
             return
 
-        for idx, contour in enumerate(contours):
-            height = height_map.get(idx)
+        for contour_line in output.contours:
+            # Convert points back to numpy array for cv2.drawContours
+            pts = np.array(contour_line.points, dtype=np.int32).reshape((-1, 1, 2))
 
-            if height is not None:
+            if contour_line.height is not None:
                 color = (0, 255, 0)  # Green for known/inferred
-                label = f"{height:.1f}"
+                label = f"{contour_line.height:.1f}"
             else:
                 color = (0, 0, 255)  # Red for unknown
                 label = "?"
 
-            cv2.drawContours(img, [contour], -1, color, 2)
+            cv2.drawContours(img, [pts], -1, color, 2)
 
-            pt = contour[0][0]
+            pt = contour_line.points[0]
             x = max(10, min(img.shape[1] - 50, pt[0]))
             y = max(20, min(img.shape[0] - 10, pt[1]))
 
@@ -150,6 +162,7 @@ class HeightExtractionPipeline:
 
 if __name__ == "__main__":
     # Test on synthetic data
+    import glob
     from pathlib import Path
 
     from OCR.engine.mock_ocr_engine import MockOCREngine
@@ -159,10 +172,14 @@ if __name__ == "__main__":
     data_dir = project_root / "data" / "synthetic" / "perlin_noise"
     annotations_path = data_dir / "coco_annotations.json"
 
-    image_path = data_dir / "sparse_0_image.png"
-    mask_path = data_dir / "sparse_0_mask.png"
+    # Find all image files
+    image_files = sorted(glob.glob(str(data_dir / "*_image.png")))
 
-    if image_path.exists() and mask_path.exists() and annotations_path.exists():
+    if not image_files:
+        print("No synthetic images found.")
+        exit(1)
+
+    if annotations_path.exists():
         # Use Mock OCR and CV2 Contour Engine
         ocr_engine = MockOCREngine(str(annotations_path))
         contour_engine = CV2ContourEngine()
@@ -170,13 +187,33 @@ if __name__ == "__main__":
             ocr_engine=ocr_engine, contour_engine=contour_engine
         )
 
-        contours, heights = pipeline.run(
-            str(image_path), str(mask_path), drop_ratio=0.0
-        )
+        for image_file in image_files:
+            image_path = Path(image_file)
+            # Assuming mask has same name but _mask suffix
+            mask_path = image_path.parent / image_path.name.replace(
+                "_image.png", "_mask.png"
+            )
 
-        output_path = (
-            project_root / "output" / "height_extraction" / "sparse_0_result.png"
-        )
-        pipeline.visualize(str(image_path), contours, heights, str(output_path))
+            if not mask_path.exists():
+                print(f"Mask not found for {image_path}, skipping.")
+                continue
+
+            print(f"\n--- Processing {image_path.name} ---")
+            result = pipeline.run(str(image_path), str(mask_path), drop_ratio=0.0)
+
+            output_path = (
+                project_root
+                / "output"
+                / "height_extraction"
+                / image_path.name.replace("_image.png", "_result.png")
+            )
+            pipeline.visualize(result, str(output_path))
+
+            # Print summary stats
+            total = len(result.contours)
+            known = sum(1 for c in result.contours if c.source == "ocr")
+            inferred = sum(1 for c in result.contours if c.source == "inference")
+            print(f"Summary: {total} contours, {known} from OCR, {inferred} inferred.")
+
     else:
-        print("Data not found.")
+        print("Annotations not found.")

@@ -45,6 +45,22 @@ uv run python -m height_extraction.pipeline
 
 Currently, the system uses a `MockOCREngine` that reads ground truth annotations from `data/synthetic/perlin_noise/coco_annotations.json`. To switch to a real OCR engine (like PaddleOCR), modify `pipeline.py` to initialize `HeightExtractionPipeline` with `PaddleOCREngine()`.
 
+### Output Structure
+
+The pipeline now returns a `HeightExtractionOutput` Pydantic model, defined in `schemas.py`.
+
+```python
+class ContourLine(BaseModel):
+    id: int
+    points: list[tuple[int, int]]
+    height: float | None
+    source: Literal["ocr", "inference", "unknown"]
+
+class HeightExtractionOutput(BaseModel):
+    image_path: str
+    contours: list[ContourLine]
+```
+
 ### Custom Contour Engine
 
 To use a custom contour extraction method (e.g., a Deep Learning model):
@@ -62,29 +78,25 @@ pipeline = HeightExtractionPipeline(contour_engine=contour_engine)
 
 ## Verification Results
 
-The pipeline has been tested on synthetic data (`data/synthetic/perlin_noise/`).
+The pipeline has been tested on multiple synthetic images (`data/synthetic/perlin_noise/`).
 
-**Example Run Output:**
+**Example Run Output (sparse_3_image.png):**
 
 ```text
-Processing .../data/synthetic/perlin_noise/sparse_0_image.png...
+--- Processing sparse_3_image.png ---
+Processing .../data/synthetic/perlin_noise/sparse_3_image.png...
 Running OCR...
-Found 8 text detections.
+Found 13 text detections.
 Extracting contours...
-Extracted 11 contours.
+Extracted 17 contours.
 Matching text to contours...
-Matched 8 contours to heights.
+Matched 13 contours to heights.
 Inferring missing heights...
-Adjacency graph has 12 edges.
+Adjacency graph has 20 edges.
 Estimated Contour Interval: 75.0
-Inferred heights for 10 contours (total).
-Saved visualization to .../output/height_extraction/sparse_0_result.png
+Inferred heights for 17 contours (total).
+Saved visualization to .../output/height_extraction/sparse_3_result.png
+Summary: 17 contours, 13 from OCR, 4 inferred.
 ```
 
-This confirms that the pipeline successfully:
-
-1.  Detects text using the Mock OCR engine.
-2.  Extracts contours using the Mock Contour Engine (OpenCV).
-3.  Matches text to contours.
-4.  Infers missing heights (e.g., 10 total heights from 8 knowns).
-5.  Generates a visualization.
+The pipeline successfully processes all 5 sparse synthetic images, correctly identifying contours, matching OCR text, and inferring missing heights where possible.

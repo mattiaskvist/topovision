@@ -46,14 +46,6 @@ We use pre-commit hooks to automatically check and format code (`ruff`) before c
 
 ```bash
 uv run pre-commit install
-### Pre-commit Hooks
-
-This project uses pre-commit hooks to automatically check and format code before commits.
-
-**Install hooks:**
-
-```bash
-uv run pre-commit install
 ```
 
 **Run hooks manually:**

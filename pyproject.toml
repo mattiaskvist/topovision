@@ -24,6 +24,8 @@ data-generation = [
 ]
 dev = [
     "pre-commit>=4.5.0",
+    "pytest>=9.0.2",
+    "pytest-cov>=7.0.0",
     "ruff>=0.14.6",
 ]
 
@@ -45,6 +47,11 @@ select = [
     "D",   # pydocstyle
 ]
 ignore = []
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*" = ["D"]
+"**/tests/*" = ["D"]
+"test_*.py" = ["D"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"

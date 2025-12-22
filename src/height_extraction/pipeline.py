@@ -13,6 +13,7 @@ from OCR.engine.paddleocr_engine import PaddleOCREngine
 
 from .inference import build_adjacency_graph, infer_missing_heights
 from .matcher import match_text_to_contours
+from .mesh_generation import export_to_obj, generate_heightmap, visualize_mesh
 from .schemas import ContourLine, HeightExtractionOutput
 
 # Constants
@@ -121,6 +122,47 @@ class HeightExtractionPipeline:
 
         return HeightExtractionOutput(image_path=image_path, contours=contour_lines)
 
+    def generate_mesh(
+        self,
+        output: HeightExtractionOutput,
+        output_path: str,
+        resolution_scale: float = 0.5,
+        scale_z: float = 1.0,
+        smoothing_sigma: float = 1.0,
+    ):
+        """Generates a 3D mesh from the height extraction output.
+
+        Args:
+            output: The HeightExtractionOutput object.
+            output_path: Path to save the .obj file.
+            resolution_scale: Scale factor for grid resolution (default 0.5).
+            scale_z: Multiplier for height values (default 1.0).
+            smoothing_sigma: Sigma for Gaussian smoothing (default 1.0).
+        """
+        print("Generating 3D mesh...")
+        try:
+            grid_x, grid_y, grid_z = generate_heightmap(
+                output,
+                resolution_scale=resolution_scale,
+                smoothing_sigma=smoothing_sigma,
+            )
+
+            dir_name = os.path.dirname(output_path)
+            if dir_name:
+                os.makedirs(dir_name, exist_ok=True)
+
+            export_to_obj(grid_x, grid_y, grid_z, output_path, scale_z=scale_z)
+        except Exception as e:
+            print(f"Failed to generate mesh: {e}")
+
+    def display_mesh(self, mesh_path: str):
+        """Displays the 3D mesh in a window.
+
+        Args:
+            mesh_path: Path to the .obj file.
+        """
+        visualize_mesh(mesh_path)
+
     def visualize(
         self,
         output: HeightExtractionOutput,
@@ -221,6 +263,20 @@ if __name__ == "__main__":
                 / image_path.name.replace("_image.png", "_result.png")
             )
             pipeline.visualize(result, str(output_path))
+
+            # Generate 3D mesh
+            mesh_output_path = (
+                project_root
+                / "output"
+                / "height_extraction"
+                / image_path.name.replace("_image.png", "_mesh.obj")
+            )
+            pipeline.generate_mesh(result, str(mesh_output_path))
+
+            # Set to False to disable interactive 3D visualization (blocks execution)
+            VISUALIZE_3D = True
+            if VISUALIZE_3D:
+                pipeline.display_mesh(str(mesh_output_path))
 
             # Print summary stats
             total = len(result.contours)

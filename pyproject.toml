@@ -6,10 +6,12 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "easyocr>=1.7.2",
+    "open3d>=0.19.0",
     "paddleocr>=3.3.2",
     "paddlepaddle>=3.2.2",
     "pydantic>=2.12.5",
     "pytesseract>=0.3.13",
+    "scipy>=1.16.3",
 ]
 
 [dependency-groups]

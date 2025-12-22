@@ -13,6 +13,7 @@ from OCR.engine.paddleocr_engine import PaddleOCREngine
 
 from .inference import build_adjacency_graph, infer_missing_heights
 from .matcher import match_text_to_contours
+from .mesh_generation import export_to_obj, generate_heightmap
 from .schemas import ContourLine, HeightExtractionOutput
 
 # Constants
@@ -121,6 +122,35 @@ class HeightExtractionPipeline:
 
         return HeightExtractionOutput(image_path=image_path, contours=contour_lines)
 
+    def generate_mesh(
+        self,
+        output: HeightExtractionOutput,
+        output_path: str,
+        resolution_scale: float = 0.5,
+        scale_z: float = 1.0,
+    ):
+        """Generates a 3D mesh from the height extraction output.
+
+        Args:
+            output: The HeightExtractionOutput object.
+            output_path: Path to save the .obj file.
+            resolution_scale: Scale factor for grid resolution (default 0.5).
+            scale_z: Multiplier for height values (default 1.0).
+        """
+        print("Generating 3D mesh...")
+        try:
+            grid_x, grid_y, grid_z = generate_heightmap(
+                output, resolution_scale=resolution_scale
+            )
+
+            dir_name = os.path.dirname(output_path)
+            if dir_name:
+                os.makedirs(dir_name, exist_ok=True)
+
+            export_to_obj(grid_x, grid_y, grid_z, output_path, scale_z=scale_z)
+        except Exception as e:
+            print(f"Failed to generate mesh: {e}")
+
     def visualize(
         self,
         output: HeightExtractionOutput,
@@ -221,6 +251,15 @@ if __name__ == "__main__":
                 / image_path.name.replace("_image.png", "_result.png")
             )
             pipeline.visualize(result, str(output_path))
+
+            # Generate 3D mesh
+            mesh_output_path = (
+                project_root
+                / "output"
+                / "height_extraction"
+                / image_path.name.replace("_image.png", "_mesh.obj")
+            )
+            pipeline.generate_mesh(result, str(mesh_output_path))
 
             # Print summary stats
             total = len(result.contours)

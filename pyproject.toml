@@ -10,6 +10,7 @@ dependencies = [
     "paddlepaddle>=3.2.2",
     "pydantic>=2.12.5",
     "pytesseract>=0.3.13",
+    "scipy>=1.16.3",
 ]
 
 [dependency-groups]

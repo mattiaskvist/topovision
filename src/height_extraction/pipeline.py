@@ -13,7 +13,7 @@ from OCR.engine.paddleocr_engine import PaddleOCREngine
 
 from .inference import build_adjacency_graph, infer_missing_heights
 from .matcher import match_text_to_contours
-from .mesh_generation import export_to_obj, generate_heightmap
+from .mesh_generation import export_to_obj, generate_heightmap, visualize_mesh
 from .schemas import ContourLine, HeightExtractionOutput
 
 # Constants
@@ -151,6 +151,14 @@ class HeightExtractionPipeline:
         except Exception as e:
             print(f"Failed to generate mesh: {e}")
 
+    def display_mesh(self, mesh_path: str):
+        """Displays the 3D mesh in a window.
+
+        Args:
+            mesh_path: Path to the .obj file.
+        """
+        visualize_mesh(mesh_path)
+
     def visualize(
         self,
         output: HeightExtractionOutput,
@@ -260,6 +268,11 @@ if __name__ == "__main__":
                 / image_path.name.replace("_image.png", "_mesh.obj")
             )
             pipeline.generate_mesh(result, str(mesh_output_path))
+
+            # Set to False to disable interactive 3D visualization (blocks execution)
+            VISUALIZE_3D = True
+            if VISUALIZE_3D:
+                pipeline.display_mesh(str(mesh_output_path))
 
             # Print summary stats
             total = len(result.contours)

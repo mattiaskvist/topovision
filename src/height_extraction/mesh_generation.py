@@ -1,6 +1,7 @@
 """Module for generating 3D meshes from height extraction output."""
 
 import numpy as np
+import open3d as o3d
 from scipy.interpolate import griddata
 
 from .schemas import HeightExtractionOutput
@@ -106,19 +107,11 @@ def export_to_obj(
 
         # Write vertices
         # OBJ format: v x y z
-        # We flatten the arrays to iterate easily.
-        # Note: Image Y is usually top-down, but 3D world Y is often up.
-        # We might want to map Image Y to World Z or -Z, and Height to World Y.
-        # Standard convention: X=X, Y=Height, Z=Y (or -Y)
-        # Let's stick to X=x, Y=y, Z=height for simplicity, but user might want to
-        # rotate later.
-        # Actually, let's do X=x, Z=y, Y=height (Y-up is common in 3D)
-
         for i in range(w):
             for j in range(h):
                 x = grid_x[i, j]
                 y = grid_z[i, j] * scale_z
-                z = grid_y[i, j]
+                z = -grid_y[i, j]  # Flip Z to match standard 3D orientation
                 f.write(f"v {x:.4f} {y:.4f} {z:.4f}\n")
 
         # Write faces
@@ -136,6 +129,29 @@ def export_to_obj(
                 v3 = (i + 1) * h + (j + 1) + 1
                 v4 = i * h + (j + 1) + 1
 
-                f.write(f"f {v1} {v2} {v3} {v4}\n")
+                # Split quad into two triangles: (v1, v2, v3) and (v1, v3, v4)
+                # Reverted order to point normals up
+                f.write(f"f {v1} {v2} {v3}\n")
+                f.write(f"f {v1} {v3} {v4}\n")
 
     print(f"Saved 3D mesh to {output_path}")
+
+
+def visualize_mesh(mesh_path: str):
+    """Visualizes a 3D mesh using Open3D.
+
+    Args:
+        mesh_path: Path to the .obj file.
+    """
+    print(f"Loading mesh from {mesh_path}...")
+    mesh = o3d.io.read_triangle_mesh(mesh_path)
+
+    if not mesh.has_vertices():
+        print("Mesh is empty or could not be loaded.")
+        return
+
+    print("Computing normals...")
+    mesh.compute_vertex_normals()
+
+    print("Opening visualization window...")
+    o3d.visualization.draw_geometries([mesh], window_name="Topovision 3D Viewer")

@@ -48,6 +48,19 @@ def test_mesh_generation():
     # Low resolution for speed
     grid_x, grid_y, grid_z = generate_heightmap(output, resolution_scale=0.2)
 
+    # Assertions for grid generation
+    assert grid_x.shape == grid_y.shape == grid_z.shape
+    assert grid_x.shape[0] > 0 and grid_x.shape[1] > 0
+
+    # Check Z range (should be between 0 and 100, allowing for some interpolation
+    # overshoot). Cubic interpolation can overshoot, so we allow a small margin or
+    # check approximate range
+    assert grid_z.min() >= -10.0  # Allow some overshoot
+    assert grid_z.max() <= 110.0
+
+    # Check that the peak is roughly around 100
+    assert grid_z.max() > 90.0
+
     print(f"Generated grid with shape {grid_x.shape}")
     print(f"Z range: {grid_z.min():.2f} to {grid_z.max():.2f}")
 
@@ -55,21 +68,35 @@ def test_mesh_generation():
     output_path = "test_mesh.obj"
     export_to_obj(grid_x, grid_y, grid_z, output_path)
 
-    if os.path.exists(output_path):
-        size = os.path.getsize(output_path)
-        print(f"Successfully created {output_path} ({size} bytes)")
+    assert os.path.exists(output_path), "Output file was not created"
 
-        # Check content
-        with open(output_path) as f:
-            lines = f.readlines()
-            v_count = sum(1 for line in lines if line.startswith("v "))
-            f_count = sum(1 for line in lines if line.startswith("f "))
-            print(f"Mesh has {v_count} vertices and {f_count} faces")
+    size = os.path.getsize(output_path)
+    assert size > 0, "Output file is empty"
+    print(f"Successfully created {output_path} ({size} bytes)")
 
-        # Cleanup
-        os.remove(output_path)
-    else:
-        print("Failed to create output file")
+    # Check content
+    with open(output_path) as f:
+        lines = f.readlines()
+        v_count = sum(1 for line in lines if line.startswith("v "))
+        f_count = sum(1 for line in lines if line.startswith("f "))
+
+        # Expected vertices: w * h
+        w, h = grid_x.shape
+        expected_v_count = w * h
+        assert v_count == expected_v_count, (
+            f"Expected {expected_v_count} vertices, got {v_count}"
+        )
+
+        # Expected faces: (w-1) * (h-1) * 2 (since we split quads into 2 triangles)
+        expected_f_count = (w - 1) * (h - 1) * 2
+        assert f_count == expected_f_count, (
+            f"Expected {expected_f_count} faces, got {f_count}"
+        )
+
+        print(f"Mesh has {v_count} vertices and {f_count} faces")
+
+    # Cleanup
+    os.remove(output_path)
 
 
 if __name__ == "__main__":

@@ -128,6 +128,7 @@ class HeightExtractionPipeline:
         output_path: str,
         resolution_scale: float = 0.5,
         scale_z: float = 1.0,
+        smoothing_sigma: float = 1.0,
     ):
         """Generates a 3D mesh from the height extraction output.
 
@@ -136,11 +137,14 @@ class HeightExtractionPipeline:
             output_path: Path to save the .obj file.
             resolution_scale: Scale factor for grid resolution (default 0.5).
             scale_z: Multiplier for height values (default 1.0).
+            smoothing_sigma: Sigma for Gaussian smoothing (default 1.0).
         """
         print("Generating 3D mesh...")
         try:
             grid_x, grid_y, grid_z = generate_heightmap(
-                output, resolution_scale=resolution_scale
+                output,
+                resolution_scale=resolution_scale,
+                smoothing_sigma=smoothing_sigma,
             )
 
             dir_name = os.path.dirname(output_path)

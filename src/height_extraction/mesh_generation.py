@@ -3,6 +3,7 @@
 import numpy as np
 import open3d as o3d
 from scipy.interpolate import griddata
+from scipy.ndimage import gaussian_filter
 
 from .schemas import HeightExtractionOutput
 
@@ -11,6 +12,7 @@ def generate_heightmap(
     output: HeightExtractionOutput,
     resolution_scale: float = 1.0,
     interpolation_method: str = "cubic",
+    smoothing_sigma: float = 0.0,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Generates a dense heightmap from sparse contour lines using interpolation.
 
@@ -19,6 +21,7 @@ def generate_heightmap(
         resolution_scale: Scale factor for the output grid resolution relative to
             the image size. 1.0 means same resolution as image.
         interpolation_method: Method for interpolation ('linear', 'nearest', 'cubic').
+        smoothing_sigma: Standard deviation for Gaussian kernel smoothing. 0 to disable.
 
     Returns:
         Tuple of (grid_x, grid_y, grid_z) arrays.
@@ -79,6 +82,9 @@ def generate_heightmap(
         grid_z[np.isnan(grid_z)] = grid_z_nearest[np.isnan(grid_z)]
 
     grid_z = grid_z.reshape((w, h))
+
+    if smoothing_sigma > 0:
+        grid_z = gaussian_filter(grid_z, sigma=smoothing_sigma)
 
     return grid_x, grid_y, grid_z
 

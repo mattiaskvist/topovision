@@ -1,0 +1,41 @@
+{
+  "image": {
+    "path": "N63E016_1260.png",
+    "size": {
+      "height": 512,
+      "width": 512
+    }
+  },
+  "labels": [
+    {
+      "elevation": 450,
+      "elevation_bbox_pixels": [
+        259.48468996514305,
+        61.42012570643794,
+        29.99455203139746,
+        15.743756532967154
+      ],
+      "contour_line_pixels": []
+    },
+    {
+      "elevation": 400,
+      "elevation_bbox_pixels": [
+        299.1663392417733,
+        43.97306222535258,
+        45.030331828767544,
+        23.59374138020803
+      ],
+      "contour_line_pixels": []
+    },
+    {
+      "elevation": 375,
+      "elevation_bbox_pixels": [
+        286.68819546736705,
+        8.811238803324557,
+        41.36424365111304,
+        24.835198772360968
+      ],
+      "contour_line_pixels": []
+    }
+  ]
+}

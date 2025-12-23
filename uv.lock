@@ -861,6 +861,8 @@ name = "topovision"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "geopandas" },
+    { name = "matplotlib" },
     { name = "scipy" },
 ]
 
@@ -881,7 +883,11 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "scipy", specifier = ">=1.16.3" }]
+requires-dist = [
+    { name = "geopandas", specifier = ">=1.1.1" },
+    { name = "matplotlib", specifier = ">=3.10.7" },
+    { name = "scipy", specifier = ">=1.16.3" },
+]
 
 [package.metadata.requires-dev]
 data-generation = [

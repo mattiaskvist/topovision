@@ -1,0 +1,31 @@
+{
+  "image": {
+    "path": "N63E016_0874.png",
+    "size": {
+      "height": 512,
+      "width": 512
+    }
+  },
+  "labels": [
+    {
+      "elevation": 350,
+      "elevation_bbox_pixels": [
+        212.92090425626395,
+        145.85205827219517,
+        43.62944820597727,
+        24.604048716200282
+      ],
+      "contour_line_pixels": []
+    },
+    {
+      "elevation": 325,
+      "elevation_bbox_pixels": [
+        240.2661164227565,
+        93.17943090924462,
+        49.975120342433115,
+        26.012272720179908
+      ],
+      "contour_line_pixels": []
+    }
+  ]
+}

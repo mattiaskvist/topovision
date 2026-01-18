@@ -5,11 +5,11 @@ Usage in main below! It processes one file, though can download a insane amount 
 Contour Map Dataset Generator with Dynamic Splitting 
 =====================================================
 Input: .shp/.geojson with contour lines.and 'elevation' column
-Output: Multiple PNG + JSON tiles with NO overlapping labels
+Output: Multiple PNG + JSON tiles with no overlapping labels
 
 Key features:
 - Smart adaptive splitting based on label collisions
-- ALL labels included - recursively splits until no collisions
+- all labels included - recursively splits until no collisions
 - Highly varied label styling (colors, fonts, sizes, rotations)
 
 JSON format per tile:
@@ -430,19 +430,25 @@ def generate_label_style(rng: random.Random) -> dict:
     edge_color = text_color if rng.random() < 0.2 else 'none'
     edge_width = rng.uniform(0.5, 1.5) if edge_color != 'none' else 0
     
+    # 30% of labels have no background box (raw text on contour lines)
+    if rng.random() < 0.3:
+        bbox_style = None
+    else:
+        bbox_style = dict(
+            boxstyle=boxstyle,
+            facecolor=bg_color,
+            edgecolor=edge_color,
+            linewidth=edge_width,
+            alpha=alpha,
+        )
+    
     return {
         'fontsize': fontsize,
         'weight': weight,
         'family': family,
         'color': text_color,
         'rotation': rotation,
-        'bbox': dict(
-            boxstyle=boxstyle,
-            facecolor=bg_color,
-            edgecolor=edge_color,
-            linewidth=edge_width,
-            alpha=alpha,
-        ),
+        'bbox': bbox_style,
     }
 
 

@@ -1,8 +1,6 @@
-"""
-Usage in main below! It processes one file, though can download a insane amount from the data.
+"""Usage in main below! It processes one file, though can download large data.
 
-
-Contour Map Dataset Generator with Dynamic Splitting 
+Contour Map Dataset Generator with Dynamic Splitting
 =====================================================
 Input: .shp/.geojson with contour lines.and 'elevation' column
 Output: Multiple PNG + JSON tiles with no overlapping labels
@@ -16,25 +14,27 @@ JSON format per tile:
 {
   "image": {"path": "<tile>.png", "size": {"height": H, "width": W}},
   "labels": [
-    {"elevation": <int>, "elevation_bbox_pixels": [x,y,w,h], "contour_line_pixels": [[x,y],...]}
+    {"elevation": <int>, "elevation_bbox_pixels": [x,y,w,h],
+     "contour_line_pixels": [[x,y],...]}
   ]
 }
 """
 from __future__ import annotations
 
 import matplotlib
+
 matplotlib.use('Agg')
 
 import argparse
+import colorsys
 import json
 import random
-import colorsys
-from pathlib import Path
 from dataclasses import dataclass
+from pathlib import Path
 
 import geopandas as gpd
-import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
+import matplotlib.pyplot as plt
 import numpy as np
 from scipy.ndimage import gaussian_filter
 from shapely.geometry import Point
@@ -74,9 +74,9 @@ class PlacedLabel:
 def generate_contrasting_colors(rng: random.Random) -> tuple[str, str, float]:
     """Generate random text and background colors with guaranteed contrast."""
     hue = rng.random()
-    
+
     style = rng.choice(['light_bg', 'dark_bg', 'colored_bg', 'inverted', 'vibrant'])
-    
+
     if style == 'light_bg':
         bg_lightness = rng.uniform(0.85, 0.98)
         text_lightness = rng.uniform(0.0, 0.25)
@@ -90,7 +90,8 @@ def generate_contrasting_colors(rng: random.Random) -> tuple[str, str, float]:
     elif style == 'colored_bg':
         bg_lightness = rng.uniform(0.4, 0.7)
         bg_sat = rng.uniform(0.3, 0.8)
-        text_lightness = rng.uniform(0.0, 0.15) if rng.random() < 0.5 else rng.uniform(0.9, 1.0)
+        text_lightness = (rng.uniform(0.0, 0.15) if rng.random() < 0.5
+                          else rng.uniform(0.9, 1.0))
         text_sat = rng.uniform(0.0, 0.2)
     elif style == 'inverted':
         bg_lightness = rng.uniform(0.1, 0.3)
@@ -103,58 +104,64 @@ def generate_contrasting_colors(rng: random.Random) -> tuple[str, str, float]:
         bg_sat = rng.uniform(0.6, 1.0)
         text_lightness = rng.uniform(0.0, 0.1)
         text_sat = 0.0
-    
+
     bg_rgb = colorsys.hls_to_rgb(hue, bg_lightness, bg_sat)
     text_hue = hue if rng.random() < 0.7 else rng.random()
     text_rgb = colorsys.hls_to_rgb(text_hue, text_lightness, text_sat)
-    
-    bg_color = '#{:02x}{:02x}{:02x}'.format(
-        int(bg_rgb[0] * 255), int(bg_rgb[1] * 255), int(bg_rgb[2] * 255))
-    text_color = '#{:02x}{:02x}{:02x}'.format(
-        int(text_rgb[0] * 255), int(text_rgb[1] * 255), int(text_rgb[2] * 255))
-    
+
+    bg_color = (f'#{int(bg_rgb[0] * 255):02x}'
+                f'{int(bg_rgb[1] * 255):02x}'
+                f'{int(bg_rgb[2] * 255):02x}')
+    text_color = (f'#{int(text_rgb[0] * 255):02x}'
+                  f'{int(text_rgb[1] * 255):02x}'
+                  f'{int(text_rgb[2] * 255):02x}')
+
     return text_color, bg_color, rng.uniform(0.6, 0.95)
 
 
 def random_colormap(seed: int) -> mcolors.LinearSegmentedColormap:
     """Generate a random terrain-style colormap."""
     rng = np.random.RandomState(seed)
-    
-    scheme_type = rng.choice(['natural', 'vibrant', 'monochrome', 'desert', 
+
+    scheme_type = rng.choice(['natural', 'vibrant', 'monochrome', 'desert',
                               'ocean', 'volcanic', 'alien', 'pastel', 'neon'])
-    
+
     schemes = {
-        'natural': ['#3a7ca5', '#5fa370', '#8fb339', '#c8b078', '#a0896a', 
+        'natural': ['#3a7ca5', '#5fa370', '#8fb339', '#c8b078', '#a0896a',
                     '#7a6855', '#a0a0a0', '#d0d0d0', '#f0f0f0'],
-        'vibrant': ['#0077be', '#00c853', '#ffd600', '#ff6f00', '#d84315', 
+        'vibrant': ['#0077be', '#00c853', '#ffd600', '#ff6f00', '#d84315',
                     '#8e24aa', '#5e35b1', '#1e88e5', '#e0e0e0'],
-        'desert': ['#8b7355', '#a08060', '#b89070', '#c8a080', '#d8b898', 
+        'desert': ['#8b7355', '#a08060', '#b89070', '#c8a080', '#d8b898',
                    '#e0c8a8', '#e8d8c0', '#f0e8d8', '#f8f0e8'],
-        'ocean': ['#001a33', '#003366', '#004d99', '#0066cc', '#0080ff', 
+        'ocean': ['#001a33', '#003366', '#004d99', '#0066cc', '#0080ff',
                   '#33adff', '#66c2ff', '#99d6ff', '#ccebff'],
-        'volcanic': ['#1a0f0a', '#331a0f', '#4d2614', '#663319', '#804020', 
+        'volcanic': ['#1a0f0a', '#331a0f', '#4d2614', '#663319', '#804020',
                      '#995533', '#b36b4d', '#cc8866', '#e6a380'],
-        'pastel': ['#ffd6e0', '#ffe0cc', '#fff0cc', '#ffffcc', '#e6ffcc', 
+        'pastel': ['#ffd6e0', '#ffe0cc', '#fff0cc', '#ffffcc', '#e6ffcc',
                    '#ccffe6', '#ccf0ff', '#e0ccff', '#ffccf0'],
         'neon': ['#0a0a0a', '#1a0a2e', '#16213e', '#0f3460', '#e94560',
                  '#ff6b6b', '#ffd93d', '#6bcb77', '#4d96ff'],
     }
-    
+
     if scheme_type == 'alien':
-        base = ['#' + ''.join(rng.choice(list('0123456789abcdef')) for _ in range(6)) 
+        base = ['#' + ''.join(rng.choice(list('0123456789abcdef')) for _ in range(6))
                 for _ in range(9)]
     elif scheme_type == 'monochrome':
         tint = rng.choice(['blues', 'greens', 'reds', 'purples'])
         tint_colors = {
-            'blues': ['#1a2332', '#2d3e50', '#4a5f7f', '#6a7fa0', '#8fa0bf', '#b0c0d0'],
-            'greens': ['#1a2618', '#2d3e2a', '#4a5f44', '#6a7f60', '#8fa084', '#b0c0a8'],
-            'reds': ['#321a1a', '#502d2d', '#7f4a4a', '#a06a6a', '#bf8f8f', '#d0b0b0'],
-            'purples': ['#2a1a32', '#3e2d50', '#5f4a7f', '#7f6aa0', '#a08fbf', '#c0b0d0'],
+            'blues': ['#1a2332', '#2d3e50', '#4a5f7f', '#6a7fa0', '#8fa0bf',
+                      '#b0c0d0'],
+            'greens': ['#1a2618', '#2d3e2a', '#4a5f44', '#6a7f60', '#8fa084',
+                       '#b0c0a8'],
+            'reds': ['#321a1a', '#502d2d', '#7f4a4a', '#a06a6a', '#bf8f8f',
+                     '#d0b0b0'],
+            'purples': ['#2a1a32', '#3e2d50', '#5f4a7f', '#7f6aa0',
+                        '#a08fbf', '#c0b0d0'],
         }
         base = tint_colors[tint]
     else:
         base = schemes.get(scheme_type, schemes['natural'])
-    
+
     colors = []
     for color in base:
         if rng.random() < 0.3:
@@ -163,10 +170,10 @@ def random_colormap(seed: int) -> mcolors.LinearSegmentedColormap:
             colors.append(rgb)
         else:
             colors.append(color)
-    
+
     if rng.random() < 0.2:
         colors.reverse()
-    
+
     return mcolors.LinearSegmentedColormap.from_list('terrain', colors)
 
 
@@ -181,33 +188,33 @@ def to_pixel(x: float, y: float, bounds: tuple, size: int) -> tuple[int, int]:
         return 0, 0
     px = (x - minx) / (maxx - minx) * size
     py = (maxy - y) / (maxy - miny) * size
-    return int(round(px)), int(round(py))
+    return round(px), round(py)
 
 
-def estimate_label_bbox_pixels(anchor_x: float, anchor_y: float, 
+def estimate_label_bbox_pixels(anchor_x: float, anchor_y: float,
                                 elevation: int, bounds: tuple, size: int,
                                 fontsize: float = 9) -> list:
     """Estimate label bounding box in pixels without rendering.
-    
+
     This is an approximation used for fast collision detection.
     """
     px, py = to_pixel(anchor_x, anchor_y, bounds, size)
-    
+
     # Estimate text dimensions based on fontsize and number of digits
     num_digits = len(str(abs(elevation)))
     char_width = fontsize * 0.7
     char_height = fontsize * 1.2
-    
+
     # Add padding for bbox
     padding = fontsize * 0.4
-    
+
     w = num_digits * char_width + padding * 2
     h = char_height + padding * 2
-    
+
     # Center the box
     x = px - w / 2
     y = py - h / 2
-    
+
     return [x, y, w, h]
 
 
@@ -223,31 +230,31 @@ def boxes_overlap(box1: list, box2: list, margin: int = 5) -> bool:
 # COLLISION-BASED SPLITTING (FAST, NO RENDERING)
 # =============================================================================
 
-def collect_label_candidates(gdf: gpd.GeoDataFrame, bounds: tuple, 
+def collect_label_candidates(gdf: gpd.GeoDataFrame, bounds: tuple,
                               seed: int) -> list[LabelCandidate]:
     """Collect all potential labels from geometries."""
     rng = random.Random(seed)
     candidates = []
-    
+
     for idx, row in gdf.iterrows():
         if ELEV_COLUMN not in row or row.geometry is None or row.geometry.is_empty:
             continue
-        
+
         elev = int(row[ELEV_COLUMN])
         line = row.geometry
-        
+
         # Get point on line (random position between 20-80%)
         fraction = rng.uniform(0.2, 0.8)
         try:
             anchor = line.interpolate(fraction * line.length)
         except Exception:
             continue
-        
+
         try:
             line_coords = list(line.coords)
         except Exception:
             line_coords = []
-        
+
         candidates.append(LabelCandidate(
             elevation=elev,
             anchor_x=anchor.x,
@@ -255,71 +262,71 @@ def collect_label_candidates(gdf: gpd.GeoDataFrame, bounds: tuple,
             line_coords=line_coords,
             geom_idx=idx
         ))
-    
+
     return candidates
 
 
-def find_collisions_fast(candidates: list[LabelCandidate], bounds: tuple, 
+def find_collisions_fast(candidates: list[LabelCandidate], bounds: tuple,
                           size: int) -> tuple[list[int], list[int]]:
     """Find which labels collide using estimated bboxes.
-    
+
     Returns (placed_indices, collision_indices)
     """
     placed = []
     placed_boxes = []
     collisions = []
-    
+
     for i, cand in enumerate(candidates):
         box = estimate_label_bbox_pixels(
             cand.anchor_x, cand.anchor_y, cand.elevation, bounds, size)
-        
+
         has_collision = False
         for placed_box in placed_boxes:
             if boxes_overlap(box, placed_box):
                 has_collision = True
                 break
-        
+
         if has_collision:
             collisions.append(i)
         else:
             placed.append(i)
             placed_boxes.append(box)
-    
+
     return placed, collisions
 
 
 def compute_split_bounds(bounds: tuple, collision_candidates: list[LabelCandidate],
                           size: int) -> list[tuple]:
     """Compute smart split based on collision locations.
-    
+
     Returns list of sub-bounds, filtering out any that are too small.
     """
     minx, miny, maxx, maxy = bounds
     range_x = maxx - minx
     range_y = maxy - miny
-    
+
     # Minimum size threshold (avoid thin slices)
     # Don't create tiles smaller than 15% of original in either dimension
     min_fraction = 0.15
-    
+
     midx = (minx + maxx) / 2
     midy = (miny + maxy) / 2
-    
+
     if collision_candidates:
         # Find average position of collisions in world coords
         coll_x = [c.anchor_x for c in collision_candidates]
         coll_y = [c.anchor_y for c in collision_candidates]
-        
+
         # Use median for split point, but clamp to reasonable range
         split_x = np.median(coll_x)
         split_y = np.median(coll_y)
-        
+
         # Clamp to 35-65% range to produce more balanced splits
         split_x = max(minx + 0.35 * range_x, min(maxx - 0.35 * range_x, split_x))
         split_y = max(miny + 0.35 * range_y, min(maxy - 0.35 * range_y, split_y))
     else:
         split_x, split_y = midx, midy
-    
+
     # Generate candidate bounds
     all_bounds = [
         (minx, miny, split_x, split_y),
@@ -327,7 +334,7 @@ def compute_split_bounds(bounds: tuple, collision_candidates: list[LabelCandidat
         (minx, split_y, split_x, maxy),
         (split_x, split_y, maxx, maxy),
     ]
-    
+
     # Filter out bounds that are too small
     valid_bounds = []
     for b in all_bounds:
@@ -336,7 +343,7 @@ def compute_split_bounds(bounds: tuple, collision_candidates: list[LabelCandidat
         # Only include if both dimensions are at least min_fraction of original
         if bx_range >= range_x * min_fraction and by_range >= range_y * min_fraction:
             valid_bounds.append(b)
-    
+
     # If all were filtered (shouldn't happen), return original bounds
     return valid_bounds if valid_bounds else all_bounds
 
@@ -344,23 +351,23 @@ def compute_split_bounds(bounds: tuple, collision_candidates: list[LabelCandidat
 def clip_gdf_to_bounds(gdf: gpd.GeoDataFrame, bounds: tuple) -> gpd.GeoDataFrame:
     """Clip geodataframe to bounds."""
     minx, miny, maxx, maxy = bounds
-    
+
     # Spatial indexing
     clipped = gdf.cx[minx:maxx, miny:maxy].copy()
-    
+
     if clipped.empty:
         return clipped
-    
+
     # Clip geometries
     def clip_geom(geom):
         try:
             return clip_by_rect(geom, minx, miny, maxx, maxy)
         except Exception:
             return geom
-    
+
     clipped['geometry'] = clipped.geometry.apply(clip_geom)
     clipped = clipped[~clipped.geometry.is_empty]
-    
+
     return clipped
 
 
@@ -369,60 +376,61 @@ def find_non_colliding_regions(gdf: gpd.GeoDataFrame, bounds: tuple,
                                  depth: int = 0, max_depth: int = 200
                                  ) -> list[tuple[gpd.GeoDataFrame, tuple, int]]:
     """Recursively find regions where labels don't collide.
-    
+
     Returns list of (gdf, bounds, seed) tuples for regions ready to render.
     """
     clipped = clip_gdf_to_bounds(gdf, bounds)
-    
+
     if clipped.empty:
         return []
-    
+
     # Collect label candidates
     candidates = collect_label_candidates(clipped, bounds, seed)
-    
+
     if not candidates:
         return []
-    
+
     # Fast collision check
-    placed_indices, collision_indices = find_collisions_fast(candidates, bounds, size)
-    
+    _placed_indices, collision_indices = find_collisions_fast(candidates, bounds, size)
+
     # If no collisions, this region is ready
     if not collision_indices or depth >= max_depth:
         return [(clipped, bounds, seed)]
-    
+
     # Need to split - compute split bounds based on collisions
     collision_candidates = [candidates[i] for i in collision_indices]
     sub_bounds_list = compute_split_bounds(bounds, collision_candidates, size)
-    
+
     results = []
     for i, sub_bounds in enumerate(sub_bounds_list):
         sub_seed = seed + i + depth * 4
         sub_results = find_non_colliding_regions(
             gdf, sub_bounds, sub_seed, size, depth + 1, max_depth)
         results.extend(sub_results)
-    
+
     return results
 
 
 # =============================================================================
-# FINAL RENDERING 
+# FINAL RENDERING
 # =============================================================================
 
 def generate_label_style(rng: random.Random) -> dict:
     """Generate random style for a single label.
-    
+
     Note: This function generates diverse label styles to create varied training data.
     30% of labels have no background (matching real maps), while 70% have contrasting
     backgrounds to help the model learn to read text in various conditions.
     """
     text_color, bg_color, alpha = generate_contrasting_colors(rng)
-    
+
     fontsize = rng.uniform(6, 14)
     weight = rng.choice(['normal', 'bold', 'bold', 'bold'])
-    family = rng.choice(['sans-serif', 'serif', 'monospace', 'sans-serif', 'sans-serif'])
+    family = rng.choice(['sans-serif', 'serif', 'monospace',
+                         'sans-serif', 'sans-serif'])
     rotation = rng.uniform(-12, 12)
     padding = rng.uniform(0.15, 0.45)
-    
+
     boxstyle = rng.choice([
         f'round,pad={padding}',
         f'round,pad={padding},rounding_size=0.3',
@@ -430,10 +438,10 @@ def generate_label_style(rng: random.Random) -> dict:
         f'roundtooth,pad={padding}',
         f'sawtooth,pad={padding}',
     ])
-    
+
     edge_color = text_color if rng.random() < 0.2 else 'none'
     edge_width = rng.uniform(0.5, 1.5) if edge_color != 'none' else 0
-    
+
     # 30% of labels have no background box (raw text on contour lines)
     if rng.random() < 0.3:
         bbox_style = None
@@ -445,7 +453,7 @@ def generate_label_style(rng: random.Random) -> dict:
             linewidth=edge_width,
             alpha=alpha,
         )
-    
+
     return {
         'fontsize': fontsize,
         'weight': weight,
@@ -459,16 +467,18 @@ def generate_label_style(rng: random.Random) -> dict:
 def add_secondary_color_pattern(ax, bounds: tuple, grid_res: int, seed: int, rng):
     """Add secondary color overlay pattern for visual variety."""
     minx, miny, maxx, maxy = bounds
-    
+
     # Different colormap for variety
     overlay_cmap = random_colormap(seed + 777)
-    
+
     # Different noise pattern
-    overlay_pattern = gaussian_filter(rng.randn(grid_res, grid_res), sigma=rng.uniform(8, 15))
+    overlay_pattern = gaussian_filter(
+        rng.randn(grid_res, grid_res), sigma=rng.uniform(8, 15)
+    )
     overlay_pattern = overlay_pattern - overlay_pattern.min()
     if overlay_pattern.max() > 0:
         overlay_pattern = overlay_pattern / overlay_pattern.max()
-    
+
     ax.imshow(overlay_pattern, extent=[minx, maxx, miny, maxy], origin='lower',
               cmap=overlay_cmap, aspect='auto', interpolation='bilinear',
               alpha=rng.uniform(0.15, 0.35), zorder=0.05)
@@ -477,18 +487,20 @@ def add_secondary_color_pattern(ax, bounds: tuple, grid_res: int, seed: int, rng
 def add_feature_patches(ax, bounds: tuple, grid_res: int, rng):
     """Add distinct color patches for terrain features."""
     minx, miny, maxx, maxy = bounds
-    
+
     # Create blob-like regions
-    blob_noise = gaussian_filter(rng.randn(grid_res, grid_res), sigma=rng.uniform(10, 18))
+    blob_noise = gaussian_filter(
+        rng.randn(grid_res, grid_res), sigma=rng.uniform(10, 18)
+    )
     threshold = rng.uniform(-0.3, 0.3)
     blob_mask = (blob_noise > threshold).astype(float)
     blob_mask = gaussian_filter(blob_mask, sigma=2)  # Soft edges
-    
+
     # Pick a distinct color for the patch
     patch_colors = ['#2d5a27', '#1e4d6b', '#6b4423', '#4a3b5c', '#5c6b3b',
                     '#6b3b5c', '#3b5c6b', '#6b5c3b', '#3b6b5c', '#5c3b6b']
     patch_color = rng.choice(patch_colors)
-    
+
     # Create colored patch
     patch_rgb = mcolors.to_rgb(patch_color)
     patch_img = np.zeros((grid_res, grid_res, 4))
@@ -496,7 +508,7 @@ def add_feature_patches(ax, bounds: tuple, grid_res: int, rng):
     patch_img[:, :, 1] = patch_rgb[1]
     patch_img[:, :, 2] = patch_rgb[2]
     patch_img[:, :, 3] = blob_mask * rng.uniform(0.2, 0.45)
-    
+
     ax.imshow(patch_img, extent=[minx, maxx, miny, maxy], origin='lower',
               aspect='auto', interpolation='bilinear', zorder=0.08)
 
@@ -504,14 +516,14 @@ def add_feature_patches(ax, bounds: tuple, grid_res: int, rng):
 def add_brightness_variation(ax, bounds: tuple, grid_res: int, rng):
     """Add brightness variation with radial gradients."""
     minx, miny, maxx, maxy = bounds
-    
+
     # Create radial gradient
     xx, yy = np.meshgrid(np.linspace(-1, 1, grid_res), np.linspace(-1, 1, grid_res))
     # Random center offset
     cx, cy = rng.uniform(-0.3, 0.3), rng.uniform(-0.3, 0.3)
     radial = np.sqrt((xx - cx)**2 + (yy - cy)**2)
     radial = 1 - np.clip(radial / 1.5, 0, 1)
-    
+
     # Apply as brightness
     if rng.random() < 0.5:
         # Dark edges (vignette)
@@ -519,48 +531,59 @@ def add_brightness_variation(ax, bounds: tuple, grid_res: int, rng):
                   cmap='gray', aspect='auto', alpha=rng.uniform(0.1, 0.25), zorder=0.02)
     else:
         # Light center (spotlight)
-        ax.imshow(1 - radial, extent=[minx, maxx, miny, maxy], origin='lower',
-                  cmap='gray_r', aspect='auto', alpha=rng.uniform(0.05, 0.15), zorder=0.02)
+        ax.imshow(
+            1 - radial, extent=[minx, maxx, miny, maxy], origin='lower',
+            cmap='gray_r', aspect='auto', alpha=rng.uniform(0.05, 0.15),
+            zorder=0.02
+        )
 
 
 def render_terrain_background(ax, gdf, elev_col: str, bounds: tuple, seed: int):
     """Render terrain background with RICH color variation across entire tile.
-    
-    Creates terrain-like patterns with multiple color zones (like lakes, forests, 
+
+    Creates terrain-like patterns with multiple color zones (like lakes, forests,
     mountains etc) regardless of the actual elevation range in this tile.
     """
     minx, miny, maxx, maxy = bounds
     elevations = gdf[elev_col].values
     elev_min, elev_max = elevations.min(), elevations.max()
-    
+
     rng = np.random.RandomState(seed)
-    
+
     # Grid resolution
     grid_res = rng.choice([80, 100, 120])
-    
+
     # === CREATE RICH SPATIAL VARIATION ===
-    
+
     # Multiple noise layers at different scales create terrain-like patterns
     # These represent different "zones" like water, forest, desert, mountains etc
-    
+
     # Base layer: large terrain features
-    base_noise = gaussian_filter(rng.randn(grid_res, grid_res), sigma=rng.uniform(12, 20))
-    
-    # Secondary features 
-    secondary_noise = gaussian_filter(rng.randn(grid_res, grid_res), sigma=rng.uniform(5, 10))
-    
-    # Tertiary features 
-    tertiary_noise = gaussian_filter(rng.randn(grid_res, grid_res), sigma=rng.uniform(2, 5))
-    
+    base_noise = gaussian_filter(
+        rng.randn(grid_res, grid_res), sigma=rng.uniform(12, 20)
+    )
+
+    # Secondary features
+    secondary_noise = gaussian_filter(
+        rng.randn(grid_res, grid_res), sigma=rng.uniform(5, 10)
+    )
+
+    # Tertiary features
+    tertiary_noise = gaussian_filter(
+        rng.randn(grid_res, grid_res), sigma=rng.uniform(2, 5)
+    )
+
     # Fine detail
-    detail_noise = gaussian_filter(rng.randn(grid_res, grid_res), sigma=rng.uniform(0.5, 2))
-    
+    detail_noise = gaussian_filter(
+        rng.randn(grid_res, grid_res), sigma=rng.uniform(0.5, 2)
+    )
+
     # Combine with random weights
     w1 = rng.uniform(0.3, 0.5)
     w2 = rng.uniform(0.2, 0.35)
     w3 = rng.uniform(0.1, 0.25)
     w4 = rng.uniform(0.05, 0.15)
-    
+
     # Normalize weights
     total_w = w1 + w2 + w3 + w4
     terrain_pattern = (base_noise * w1 + secondary_noise * w2 +
@@ -700,7 +723,7 @@ def render_final_tile(gdf: gpd.GeoDataFrame, bounds: tuple,
     for _, row in gdf.iterrows():
         if row.geometry is None or row.geometry.is_empty:
             continue
-        
+
         elev = int(row[ELEV_COLUMN])
         line = row.geometry
 

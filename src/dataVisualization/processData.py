@@ -31,7 +31,6 @@ import random
 import colorsys
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Optional
 
 import geopandas as gpd
 import matplotlib.pyplot as plt
@@ -241,12 +240,12 @@ def collect_label_candidates(gdf: gpd.GeoDataFrame, bounds: tuple,
         fraction = rng.uniform(0.2, 0.8)
         try:
             anchor = line.interpolate(fraction * line.length)
-        except:
+        except Exception:
             continue
         
         try:
             line_coords = list(line.coords)
-        except:
+        except Exception:
             line_coords = []
         
         candidates.append(LabelCandidate(
@@ -275,8 +274,8 @@ def find_collisions_fast(candidates: list[LabelCandidate], bounds: tuple,
             cand.anchor_x, cand.anchor_y, cand.elevation, bounds, size)
         
         has_collision = False
-        for pb in placed_boxes:
-            if boxes_overlap(box, pb):
+        for placed_box in placed_boxes:
+            if boxes_overlap(box, placed_box):
                 has_collision = True
                 break
         
@@ -356,7 +355,7 @@ def clip_gdf_to_bounds(gdf: gpd.GeoDataFrame, bounds: tuple) -> gpd.GeoDataFrame
     def clip_geom(geom):
         try:
             return clip_by_rect(geom, minx, miny, maxx, maxy)
-        except:
+        except Exception:
             return geom
     
     clipped['geometry'] = clipped.geometry.apply(clip_geom)
@@ -410,7 +409,12 @@ def find_non_colliding_regions(gdf: gpd.GeoDataFrame, bounds: tuple,
 # =============================================================================
 
 def generate_label_style(rng: random.Random) -> dict:
-    """Generate random style for a single label."""
+    """Generate random style for a single label.
+    
+    Note: This function generates diverse label styles to create varied training data.
+    30% of labels have no background (matching real maps), while 70% have contrasting
+    backgrounds to help the model learn to read text in various conditions.
+    """
     text_color, bg_color, alpha = generate_contrasting_colors(rng)
     
     fontsize = rng.uniform(6, 14)
@@ -450,6 +454,73 @@ def generate_label_style(rng: random.Random) -> dict:
         'rotation': rotation,
         'bbox': bbox_style,
     }
+
+
+def add_secondary_color_pattern(ax, bounds: tuple, grid_res: int, seed: int, rng):
+    """Add secondary color overlay pattern for visual variety."""
+    minx, miny, maxx, maxy = bounds
+    
+    # Different colormap for variety
+    overlay_cmap = random_colormap(seed + 777)
+    
+    # Different noise pattern
+    overlay_pattern = gaussian_filter(rng.randn(grid_res, grid_res), sigma=rng.uniform(8, 15))
+    overlay_pattern = overlay_pattern - overlay_pattern.min()
+    if overlay_pattern.max() > 0:
+        overlay_pattern = overlay_pattern / overlay_pattern.max()
+    
+    ax.imshow(overlay_pattern, extent=[minx, maxx, miny, maxy], origin='lower',
+              cmap=overlay_cmap, aspect='auto', interpolation='bilinear',
+              alpha=rng.uniform(0.15, 0.35), zorder=0.05)
+
+
+def add_feature_patches(ax, bounds: tuple, grid_res: int, rng):
+    """Add distinct color patches for terrain features."""
+    minx, miny, maxx, maxy = bounds
+    
+    # Create blob-like regions
+    blob_noise = gaussian_filter(rng.randn(grid_res, grid_res), sigma=rng.uniform(10, 18))
+    threshold = rng.uniform(-0.3, 0.3)
+    blob_mask = (blob_noise > threshold).astype(float)
+    blob_mask = gaussian_filter(blob_mask, sigma=2)  # Soft edges
+    
+    # Pick a distinct color for the patch
+    patch_colors = ['#2d5a27', '#1e4d6b', '#6b4423', '#4a3b5c', '#5c6b3b',
+                    '#6b3b5c', '#3b5c6b', '#6b5c3b', '#3b6b5c', '#5c3b6b']
+    patch_color = rng.choice(patch_colors)
+    
+    # Create colored patch
+    patch_rgb = mcolors.to_rgb(patch_color)
+    patch_img = np.zeros((grid_res, grid_res, 4))
+    patch_img[:, :, 0] = patch_rgb[0]
+    patch_img[:, :, 1] = patch_rgb[1]
+    patch_img[:, :, 2] = patch_rgb[2]
+    patch_img[:, :, 3] = blob_mask * rng.uniform(0.2, 0.45)
+    
+    ax.imshow(patch_img, extent=[minx, maxx, miny, maxy], origin='lower',
+              aspect='auto', interpolation='bilinear', zorder=0.08)
+
+
+def add_brightness_variation(ax, bounds: tuple, grid_res: int, rng):
+    """Add brightness variation with radial gradients."""
+    minx, miny, maxx, maxy = bounds
+    
+    # Create radial gradient
+    xx, yy = np.meshgrid(np.linspace(-1, 1, grid_res), np.linspace(-1, 1, grid_res))
+    # Random center offset
+    cx, cy = rng.uniform(-0.3, 0.3), rng.uniform(-0.3, 0.3)
+    radial = np.sqrt((xx - cx)**2 + (yy - cy)**2)
+    radial = 1 - np.clip(radial / 1.5, 0, 1)
+    
+    # Apply as brightness
+    if rng.random() < 0.5:
+        # Dark edges (vignette)
+        ax.imshow(radial, extent=[minx, maxx, miny, maxy], origin='lower',
+                  cmap='gray', aspect='auto', alpha=rng.uniform(0.1, 0.25), zorder=0.02)
+    else:
+        # Light center (spotlight)
+        ax.imshow(1 - radial, extent=[minx, maxx, miny, maxy], origin='lower',
+                  cmap='gray_r', aspect='auto', alpha=rng.uniform(0.05, 0.15), zorder=0.02)
 
 
 def render_terrain_background(ax, gdf, elev_col: str, bounds: tuple, seed: int):
@@ -529,7 +600,7 @@ def render_terrain_background(ax, gdf, elev_col: str, bounds: tuple, seed: int):
                             if i < grid_res and j < grid_res:
                                 if buffered.contains(Point(x_grid[i], y_grid[j])):
                                     Z[j, i] = elev
-                except:
+                except Exception:
                     continue
         
         Z = gaussian_filter(Z, sigma=1.5)
@@ -555,62 +626,16 @@ def render_terrain_background(ax, gdf, elev_col: str, bounds: tuple, seed: int):
     # === ADD SECONDARY COLOR PATTERN ===
     
     if rng.random() < 0.6:  # 60% chance for extra color layer
-        # Different colormap for variety
-        overlay_cmap = random_colormap(seed + 777)
-        
-        # Different noise pattern
-        overlay_pattern = gaussian_filter(rng.randn(grid_res, grid_res), sigma=rng.uniform(8, 15))
-        overlay_pattern = overlay_pattern - overlay_pattern.min()
-        if overlay_pattern.max() > 0:
-            overlay_pattern = overlay_pattern / overlay_pattern.max()
-        
-        ax.imshow(overlay_pattern, extent=[minx, maxx, miny, maxy], origin='lower',
-                  cmap=overlay_cmap, aspect='auto', interpolation='bilinear',
-                  alpha=rng.uniform(0.15, 0.35), zorder=0.05)
+        add_secondary_color_pattern(ax, bounds, grid_res, seed, rng)
     
     # === OCCASIONAL FEATURE PATCHES ===
     
     if rng.random() < 0.4:  # 40% chance for distinct patches
-        # Create blob-like regions
-        blob_noise = gaussian_filter(rng.randn(grid_res, grid_res), sigma=rng.uniform(10, 18))
-        threshold = rng.uniform(-0.3, 0.3)
-        blob_mask = (blob_noise > threshold).astype(float)
-        blob_mask = gaussian_filter(blob_mask, sigma=2)  # Soft edges
-        
-        # Pick a distinct color for the patch
-        patch_colors = ['#2d5a27', '#1e4d6b', '#6b4423', '#4a3b5c', '#5c6b3b',
-                        '#6b3b5c', '#3b5c6b', '#6b5c3b', '#3b6b5c', '#5c3b6b']
-        patch_color = rng.choice(patch_colors)
-        
-        # Create colored patch
-        patch_rgb = mcolors.to_rgb(patch_color)
-        patch_img = np.zeros((grid_res, grid_res, 4))
-        patch_img[:, :, 0] = patch_rgb[0]
-        patch_img[:, :, 1] = patch_rgb[1]
-        patch_img[:, :, 2] = patch_rgb[2]
-        patch_img[:, :, 3] = blob_mask * rng.uniform(0.2, 0.45)
-        
-        ax.imshow(patch_img, extent=[minx, maxx, miny, maxy], origin='lower',
-                  aspect='auto', interpolation='bilinear', zorder=0.08)
+        add_feature_patches(ax, bounds, grid_res, rng)
     
     # Brightness variation 
     if rng.random() < 0.2:
-        # Create radial gradient
-        xx, yy = np.meshgrid(np.linspace(-1, 1, grid_res), np.linspace(-1, 1, grid_res))
-        # Random center offset
-        cx, cy = rng.uniform(-0.3, 0.3), rng.uniform(-0.3, 0.3)
-        radial = np.sqrt((xx - cx)**2 + (yy - cy)**2)
-        radial = 1 - np.clip(radial / 1.5, 0, 1)
-        
-        # Apply as brightness
-        if rng.random() < 0.5:
-            # Dark edges (vignette)
-            ax.imshow(radial, extent=[minx, maxx, miny, maxy], origin='lower',
-                      cmap='gray', aspect='auto', alpha=rng.uniform(0.1, 0.25), zorder=0.02)
-        else:
-            # Light center (spotlight)
-            ax.imshow(1 - radial, extent=[minx, maxx, miny, maxy], origin='lower',
-                      cmap='gray_r', aspect='auto', alpha=rng.uniform(0.05, 0.15), zorder=0.02)
+        add_brightness_variation(ax, bounds, grid_res, rng)
     
     return elev_min, elev_max, terrain_cmap
 
@@ -657,7 +682,6 @@ def render_final_tile(gdf: gpd.GeoDataFrame, bounds: tuple,
     
     # Add labels
     text_objects = []
-    label_data = []
     
     for _, row in gdf.iterrows():
         if row.geometry is None or row.geometry.is_empty:
@@ -669,7 +693,7 @@ def render_final_tile(gdf: gpd.GeoDataFrame, bounds: tuple,
         fraction = rng.uniform(0.2, 0.8)
         try:
             anchor = line.interpolate(fraction * line.length)
-        except:
+        except Exception:
             continue
         
         style = generate_label_style(rng)
@@ -688,7 +712,7 @@ def render_final_tile(gdf: gpd.GeoDataFrame, bounds: tuple,
         
         try:
             line_coords = list(line.coords)
-        except:
+        except Exception:
             line_coords = []
         
         text_objects.append((txt, elev, line_coords))
@@ -722,7 +746,7 @@ def render_final_tile(gdf: gpd.GeoDataFrame, bounds: tuple,
                 placed_boxes.append(box)
             else:
                 txt.set_visible(False)
-        except:
+        except Exception:
             txt.set_visible(False)
     
     # Save
@@ -814,9 +838,9 @@ def process_file(input_path: Path, output_dir: Path,
 
 def main():
     parser = argparse.ArgumentParser(description="Generate contour dataset with adaptive splitting.")
-    parser.add_argument("--input", "-i", default="src/dataVisualization/dataExample/N63E016/N63E016.shp", 
+    parser.add_argument("--input", "-i", default="data/dataVisualization/dataExample/N63E016/N63E016.shp", 
                         help="Input .shp or .geojson")
-    parser.add_argument("--output", "-o", default="src/dataVisualization/output/new/example_output", 
+    parser.add_argument("--output", "-o", default="data/dataVisualization/output/new/example_output", 
                         help="Output directory")
     parser.add_argument("--size", type=int, default=512, help="Tile size (square)")
     parser.add_argument("--dpi", type=int, default=150, help="Render DPI")

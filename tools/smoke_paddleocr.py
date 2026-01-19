@@ -1,3 +1,5 @@
+"""Smoke out errors in paddleocrEngine."""
+
 from __future__ import annotations
 
 import sys
@@ -5,15 +7,15 @@ from pathlib import Path
 
 from PIL import Image
 
-
 # Make "src/" importable
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from OCR.engine.paddleocr_engine import PaddleOCREngine
+from OCR.engine.paddleocr_engine import PaddleOCREngine  # noqa: E402
 
 
 def main() -> int:
+    """Run main program."""
     if len(sys.argv) < 2:
         print("Usage: uv run python tools/smoke_paddleocr.py /path/to/image.png")
         return 2
@@ -64,7 +66,7 @@ def main() -> int:
 
         if xs and ys:
             print(
-                f"  polygon bounds: x=({min(xs):.1f},{max(xs):.1f}) y=({min(ys):.1f},{max(ys):.1f})"
+                f"  polygon bounds: x=({min(xs):.1f},{max(xs):.1f}) y=({min(ys):.1f},{max(ys):.1f})"  # noqa: E501
             )
             if min(xs) < -2 or min(ys) < -2 or max(xs) > w + 2 or max(ys) > h + 2:
                 print("  WARNING: polygon outside image bounds")

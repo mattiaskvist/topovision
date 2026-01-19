@@ -1,10 +1,11 @@
+"""This file tests paddleocr."""
+
 from __future__ import annotations
 
 import sys
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
-
 
 # Make "src/" importable
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,14 +21,15 @@ def _as_points(poly) -> list[tuple[int, int]]:
     pts: list[tuple[int, int]] = []
     for p in poly:
         x, y = p
-        pts.append((int(round(x)), int(round(y))))
+        pts.append((round(x), round(y)))
     return pts
 
 
 def main() -> int:
+    """Run main program."""
     if len(sys.argv) < 2:
         print(
-            "Usage: uv run python tools/visualize_paddleocr.py /path/to/image.png [out.png]"
+            "Usage: uv run python tools/visualize_paddleocr.py /path/to/image.png [out.png]"  # noqa: E501
         )
         return 2
 
@@ -60,7 +62,7 @@ def main() -> int:
 
         # draw polygon (closed)
         if len(pts) >= 2:
-            draw.line(pts + [pts[0]], width=2)
+            draw.line(pts, [pts[0]], width=2)
 
         # label near first point
         x0, y0 = pts[0]

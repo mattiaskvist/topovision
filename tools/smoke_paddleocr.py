@@ -34,7 +34,7 @@ def main() -> int:
 
     if hasattr(engine.ocr, "predict"):
         print(f"Saving native PaddleOCR overlay into: {out_dir}")
-        native_results = engine.ocr.predict(input=str(image_path))  # nota: keyword input
+        native_results = engine.ocr.predict(input=str(image_path))  # note: keyword input
         for r in native_results:
             if hasattr(r, "save_to_img"):
                 r.save_to_img(save_path=str(out_dir))

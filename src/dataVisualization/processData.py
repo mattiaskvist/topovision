@@ -563,141 +563,155 @@ def render_terrain_background(ax, gdf, elev_col: str, bounds: tuple, seed: int):
     
     # Normalize weights
     total_w = w1 + w2 + w3 + w4
-    terrain_pattern = (base_noise * w1 + secondary_noise * w2 + 
+    terrain_pattern = (base_noise * w1 + secondary_noise * w2 +
                        tertiary_noise * w3 + detail_noise * w4) / total_w
-    
+
     # Normalize to 0-1 range with good spread
     terrain_pattern = terrain_pattern - terrain_pattern.min()
     if terrain_pattern.max() > 0:
         terrain_pattern = terrain_pattern / terrain_pattern.max()
-    
+
     # Add some contrast enhancement
     contrast = rng.uniform(0.8, 1.4)
     terrain_pattern = np.clip((terrain_pattern - 0.5) * contrast + 0.5, 0, 1)
-    
+
     # === OPTIONAL: Mix in actual contour elevation data ===
     if elev_max > elev_min and rng.random() < 0.5:
         # Sometimes blend in real elevation for more variety
         x_grid = np.linspace(minx, maxx, grid_res)
         y_grid = np.linspace(miny, maxy, grid_res)
-        Z = np.ones((grid_res, grid_res)) * elev_min
-        
+        z_grid = np.ones((grid_res, grid_res)) * elev_min
+
         buffer_size = (maxx - minx) / grid_res * rng.uniform(2.0, 4.0)
         for elev in sorted(gdf[elev_col].unique()):
             for geom in gdf[gdf[elev_col] == elev].geometry:
                 try:
                     buffered = geom.buffer(buffer_size)
                     gminx, gminy, gmaxx, gmaxy = buffered.bounds
-                    
-                    i_start = max(0, int((gminx - minx) / (maxx - minx) * grid_res))
-                    i_end = min(grid_res, int((gmaxx - minx) / (maxx - minx) * grid_res) + 1)
-                    j_start = max(0, int((gminy - miny) / (maxy - miny) * grid_res))
-                    j_end = min(grid_res, int((gmaxy - miny) / (maxy - miny) * grid_res) + 1)
-                    
+
+                    i_start = max(
+                        0, int((gminx - minx) / (maxx - minx) * grid_res)
+                    )
+                    i_end = min(
+                        grid_res,
+                        int((gmaxx - minx) / (maxx - minx) * grid_res) + 1
+                    )
+                    j_start = max(
+                        0, int((gminy - miny) / (maxy - miny) * grid_res)
+                    )
+                    j_end = min(
+                        grid_res,
+                        int((gmaxy - miny) / (maxy - miny) * grid_res) + 1
+                    )
+
                     step = max(1, (i_end - i_start) // 12)
                     for i in range(i_start, i_end, step):
                         for j in range(j_start, j_end, step):
-                            if i < grid_res and j < grid_res:
-                                if buffered.contains(Point(x_grid[i], y_grid[j])):
-                                    Z[j, i] = elev
+                            if (i < grid_res and j < grid_res and
+                                    buffered.contains(
+                                        Point(x_grid[i], y_grid[j])
+                                    )):
+                                z_grid[j, i] = elev
                 except Exception:
                     continue
-        
-        Z = gaussian_filter(Z, sigma=1.5)
-        Z_norm = (Z - elev_min) / (elev_max - elev_min)
-        
+
+        z_grid = gaussian_filter(z_grid, sigma=1.5)
+        z_norm = (z_grid - elev_min) / (elev_max - elev_min)
+
         # Blend elevation with spatial pattern
         blend = rng.uniform(0.2, 0.5)
-        terrain_pattern = terrain_pattern * (1 - blend) + Z_norm * blend
-    
+        terrain_pattern = terrain_pattern * (1 - blend) + z_norm * blend
+
     # === COLORMAP AND RENDERING ===
-    
+
     terrain_cmap = random_colormap(seed)
-    
+
     # Random interpolation
     interp = rng.choice(['bilinear', 'bicubic', 'lanczos'])
     alpha = rng.uniform(0.75, 0.98)
-    
+
     # Main terrain layer
     ax.imshow(terrain_pattern, extent=[minx, maxx, miny, maxy], origin='lower',
               cmap=terrain_cmap, aspect='auto', interpolation=interp,
               alpha=alpha, zorder=0)
-    
+
     # === ADD SECONDARY COLOR PATTERN ===
-    
+
     if rng.random() < 0.6:  # 60% chance for extra color layer
         add_secondary_color_pattern(ax, bounds, grid_res, seed, rng)
-    
+
     # === OCCASIONAL FEATURE PATCHES ===
-    
+
     if rng.random() < 0.4:  # 40% chance for distinct patches
         add_feature_patches(ax, bounds, grid_res, rng)
-    
-    # Brightness variation 
+
+    # Brightness variation
     if rng.random() < 0.2:
         add_brightness_variation(ax, bounds, grid_res, rng)
-    
+
     return elev_min, elev_max, terrain_cmap
 
 
-def render_final_tile(gdf: gpd.GeoDataFrame, bounds: tuple, 
+def render_final_tile(gdf: gpd.GeoDataFrame, bounds: tuple,
                        img_path: Path, seed: int,
                        size: int = 512, dpi: int = 150) -> list[dict]:
     """Render a tile that has been verified to have no collisions."""
     if gdf.empty or ELEV_COLUMN not in gdf.columns:
         return []
-    
+
     rng = random.Random(seed)
     minx, miny, maxx, maxy = bounds
-    
+
     # Create figure
     fig = plt.figure(figsize=(size / dpi, size / dpi), dpi=dpi)
     ax = fig.add_axes([0, 0, 1, 1])
     ax.set_xlim(minx, maxx)
     ax.set_ylim(miny, maxy)
     ax.axis("off")
-    
+
     # Render terrain
     elev_min, elev_max, terrain_cmap = render_terrain_background(
         ax, gdf, ELEV_COLUMN, bounds, seed)
-    
+
     # Draw contour lines
     line_width = rng.uniform(0.8, 1.5)
     for _, row in gdf.iterrows():
         elev = row[ELEV_COLUMN]
-        norm_elev = ((elev - elev_min) / (elev_max - elev_min) 
+        norm_elev = ((elev - elev_min) / (elev_max - elev_min)
                      if elev_max > elev_min else 0.5)
-        
+
         if terrain_cmap:
             color = terrain_cmap(norm_elev)
             darken_factor = rng.uniform(0.3, 0.6)
-            line_color = tuple(c * darken_factor for c in color[:3]) + (1.0,)
+            line_color = (
+                *tuple(c * darken_factor for c in color[:3]), 1.0
+            )
         else:
             line_color = 'black'
-        
+
         gdf[gdf[ELEV_COLUMN] == elev].plot(
-            ax=ax, linewidth=line_width, edgecolor=line_color, 
+            ax=ax, linewidth=line_width, edgecolor=line_color,
             facecolor='none', zorder=2
         )
-    
+
     # Add labels
     text_objects = []
-    
+
     for _, row in gdf.iterrows():
         if row.geometry is None or row.geometry.is_empty:
             continue
         
         elev = int(row[ELEV_COLUMN])
         line = row.geometry
-        
+
         fraction = rng.uniform(0.2, 0.8)
         try:
             anchor = line.interpolate(fraction * line.length)
         except Exception:
             continue
-        
+
         style = generate_label_style(rng)
-        
+
         txt = ax.text(
             anchor.x, anchor.y, str(elev),
             fontsize=style['fontsize'],
@@ -709,35 +723,38 @@ def render_final_tile(gdf: gpd.GeoDataFrame, bounds: tuple,
             bbox=style['bbox'],
             zorder=3
         )
-        
+
         try:
             line_coords = list(line.coords)
         except Exception:
             line_coords = []
-        
+
         text_objects.append((txt, elev, line_coords))
-    
+
     # Get actual bboxes and do final collision check
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
     transform = fig.transFigure.inverted()
-    
+
     placed_boxes = []
     labels = []
-    
+
     for txt, elev, line_coords in text_objects:
         try:
             bbox_disp = txt.get_window_extent(renderer)
             bbox_fig = bbox_disp.transformed(transform)
-            
+
             x = bbox_fig.x0 * size
             y = (1 - bbox_fig.y1) * size
             w = bbox_fig.width * size
             h = bbox_fig.height * size
             box = [x, y, w, h]
-            
+
             if not any(boxes_overlap(box, pb) for pb in placed_boxes):
-                contour_pixels = [to_pixel(px, py, bounds, size) for px, py in line_coords]
+                contour_pixels = [
+                    to_pixel(px, py, bounds, size)
+                    for px, py in line_coords
+                ]
                 labels.append({
                     "elevation": elev,
                     "elevation_bbox_pixels": box,
@@ -748,12 +765,12 @@ def render_final_tile(gdf: gpd.GeoDataFrame, bounds: tuple,
                 txt.set_visible(False)
         except Exception:
             txt.set_visible(False)
-    
+
     # Save
     img_path.parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(img_path, dpi=dpi, facecolor='white', pad_inches=0)
     plt.close(fig)
-    
+
     return labels
 
 
@@ -761,98 +778,120 @@ def render_final_tile(gdf: gpd.GeoDataFrame, bounds: tuple,
 # PROCESSING
 # =============================================================================
 
-def process_file(input_path: Path, output_dir: Path, 
+def process_file(input_path: Path, output_dir: Path,
                  size: int = 512, dpi: int = 150):
     """Process one shapefile with adaptive splitting."""
     print(f"📂 Loading {input_path.name}...")
     gdf = gpd.read_file(input_path)
-    
+
     if ELEV_COLUMN not in gdf.columns:
-        raise ValueError(f"Missing '{ELEV_COLUMN}' column. Found: {list(gdf.columns)}")
-    
+        err_msg = (f"Missing '{ELEV_COLUMN}' column. "
+                   f"Found: {list(gdf.columns)}")
+        raise ValueError(err_msg)
+
     elev_range = (gdf[ELEV_COLUMN].min(), gdf[ELEV_COLUMN].max())
     print(f"   Elevation: {elev_range[0]:.0f}m - {elev_range[1]:.0f}m")
     print(f"   Contour lines: {len(gdf)}")
-    
+
     name = input_path.stem
     tiles_dir = output_dir / name
     tiles_dir.mkdir(parents=True, exist_ok=True)
-    
+
     bounds = tuple(gdf.total_bounds)
     seed = hash(input_path.name) % (2**31)
-    
-    print(f"   Finding non-colliding regions...")
-    
+
+    print("   Finding non-colliding regions...")
+
     # Phase 1: Find all non-colliding regions
     regions = find_non_colliding_regions(gdf, bounds, seed, size)
-    
+
     print(f"   Found {len(regions)} regions to render")
-    print(f"   Rendering tiles...")
-    
+    print("   Rendering tiles...")
+
     # Phase 2: Render only the final tiles
     all_tiles = []
     for i, (region_gdf, region_bounds, region_seed) in enumerate(regions):
         tile_id = f"{name}_{i:04d}"
         img_path = tiles_dir / f"{tile_id}.png"
         labels_path = tiles_dir / f"{tile_id}_labels.json"
-        
-        labels = render_final_tile(region_gdf, region_bounds, img_path, 
-                                   region_seed, size, dpi)
-        
+
+        labels = render_final_tile(
+            region_gdf, region_bounds, img_path,
+            region_seed, size, dpi
+        )
+
         # Save labels JSON
         with open(labels_path, "w") as f:
             json.dump({
-                "image": {"path": f"{tile_id}.png", "size": {"height": size, "width": size}},
+                "image": {
+                    "path": f"{tile_id}.png",
+                    "size": {"height": size, "width": size}
+                },
                 "labels": labels
             }, f, indent=2)
-        
+
         all_tiles.append({
             "tile_id": tile_id,
             "bounds": list(region_bounds),
             "num_labels": len(labels),
         })
-        
+
         if (i + 1) % 50 == 0:
             print(f"      Rendered {i + 1}/{len(regions)} tiles...")
-    
+
     if not all_tiles:
         print("No tiles generated")
         return
-    
+
     # Save summary
     total_labels = sum(t["num_labels"] for t in all_tiles)
-    
+
     with open(tiles_dir / "summary.json", "w") as f:
         json.dump({
             "source": input_path.name,
-            "config": {"tile_size": size, "dpi": dpi, "method": "adaptive_split"},
+            "config": {
+                "tile_size": size,
+                "dpi": dpi,
+                "method": "adaptive_split"
+            },
             "elevation_range": [float(elev_range[0]), float(elev_range[1])],
             "total_tiles": len(all_tiles),
             "total_labels": total_labels,
             "tiles": all_tiles
         }, f, indent=2)
-    
+
     print(f"\nComplete: {len(all_tiles)} tiles, {total_labels} labels")
     print(f"Output: {tiles_dir}\n")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate contour dataset with adaptive splitting.")
-    parser.add_argument("--input", "-i", default="data/dataVisualization/dataExample/N63E016/N63E016.shp", 
-                        help="Input .shp or .geojson")
-    parser.add_argument("--output", "-o", default="data/dataVisualization/output/new/example_output", 
-                        help="Output directory")
-    parser.add_argument("--size", type=int, default=512, help="Tile size (square)")
+    """Generate contour dataset with adaptive splitting."""
+    parser = argparse.ArgumentParser(
+        description="Generate contour dataset with adaptive splitting."
+    )
+    parser.add_argument(
+        "--input", "-i",
+        default="data/dataVisualization/dataExample/N63E016/N63E016.shp",
+        help="Input .shp or .geojson"
+    )
+    parser.add_argument(
+        "--output", "-o",
+        default="data/dataVisualization/output/new/example_output",
+        help="Output directory"
+    )
+    parser.add_argument(
+        "--size", type=int, default=512, help="Tile size (square)"
+    )
     parser.add_argument("--dpi", type=int, default=150, help="Render DPI")
-    
+
     args = parser.parse_args()
-    
+
     input_path = Path(args.input)
     output_dir = Path(args.output)
     output_dir.mkdir(parents=True, exist_ok=True)
-    
-    process_file(input_path, output_dir, 
-                 size=args.size, 
+
+    process_file(input_path, output_dir,
+                 size=args.size,
                  dpi=args.dpi)
 
 

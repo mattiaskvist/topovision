@@ -26,7 +26,9 @@ def _as_points(poly) -> list[tuple[int, int]]:
 
 def main() -> int:
     if len(sys.argv) < 2:
-        print("Usage: uv run python tools/visualize_paddleocr.py /path/to/image.png [out.png]")
+        print(
+            "Usage: uv run python tools/visualize_paddleocr.py /path/to/image.png [out.png]"
+        )
         return 2
 
     image_path = Path(sys.argv[1]).expanduser().resolve()

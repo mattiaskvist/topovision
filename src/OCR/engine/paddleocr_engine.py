@@ -51,7 +51,6 @@ class PaddleOCREngine(OCREngine):
             texts = res.get("rec_texts", []) or []
             scores = res.get("rec_scores", []) or []
 
-
             polys = (
                 res.get("rec_polys")
                 or res.get("textline_polys")

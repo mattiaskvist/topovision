@@ -65,7 +65,7 @@ def main() -> int:
         if xs and ys:
             print(f"  polygon bounds: x=({min(xs):.1f},{max(xs):.1f}) y=({min(ys):.1f},{max(ys):.1f})")
             if min(xs) < -2 or min(ys) < -2 or max(xs) > w + 2 or max(ys) > h + 2:
-                print("  WARNING: polygon fuori immagine")
+                print("  WARNING: polygon outside image bounds")
 
         if not (0.0 <= float(det.confidence) <= 1.0):
             raise ValueError(f"Invalid confidence: {det.confidence}")

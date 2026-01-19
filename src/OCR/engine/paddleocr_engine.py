@@ -17,8 +17,8 @@ class PaddleOCREngine(OCREngine):
             use_doc_orientation_classify=False,
             use_doc_unwarping=False,
             lang="en",
-            text_detection_model_name="PP-OCRv5_mobile_det",
-            text_recognition_model_name="PP-OCRv5_mobile_rec",
+            text_detection_model_name="PP-OCRv5_server_det",
+            text_recognition_model_name="PP-OCRv5_server_rec",
         )
 
     @staticmethod

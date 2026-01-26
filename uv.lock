@@ -1311,7 +1311,7 @@ wheels = [
 
 [[package]]
 name = "paddleocr"
-version = "3.3.2"
+version = "3.3.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "paddlex", extra = ["ocr-core"] },
@@ -1319,9 +1319,9 @@ dependencies = [
     { name = "requests" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/eb/8c/b610e1796e1279b7a1e314495ed169a6bdcc1b48b62b9fc7603f25489f3e/paddleocr-3.3.2.tar.gz", hash = "sha256:2d14af4d12d9f85953645325ce4a2c6ea0d45aca4bb5f5fcd2400b19d2fd2838", size = 2502499, upload-time = "2025-11-13T14:46:38.722Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/25/da/f04a3348834e5e824eabc805aab030d3ed8726c46657cbdc6967982be728/paddleocr-3.3.3.tar.gz", hash = "sha256:91e54ca54846384882ec9e0831e5f55d98776f2eefcc256dfa7b074afd587adb", size = 2502835, upload-time = "2026-01-20T07:27:42.394Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/3d/85/6ddc745473e1f586db1e0b27c395b1e59b2b49b5a5dc76bba19487692468/paddleocr-3.3.2-py3-none-any.whl", hash = "sha256:b7536b7e8ee531ec8f6073555986c7eaa9ed2b50e00605b796b167635fd799ac", size = 86991, upload-time = "2025-11-13T14:46:37.252Z" },
+    { url = "https://files.pythonhosted.org/packages/17/de/e5df590f89b039a1f7bfccf7a1c74b3abc47e5334a0f437febbff0a448da/paddleocr-3.3.3-py3-none-any.whl", hash = "sha256:172697bd4d97dd444de67b90bd3b2392f0398be58ddf5f21ed79778828f6ba80", size = 87064, upload-time = "2026-01-20T07:27:40.949Z" },
 ]
 
 [[package]]

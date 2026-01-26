@@ -1,0 +1,1 @@
+"""Height extraction pipeline."""

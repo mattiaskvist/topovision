@@ -1,0 +1,1 @@
+"""Contour extraction engine module."""

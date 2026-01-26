@@ -62,7 +62,7 @@ def main() -> int:
 
         # draw polygon (closed)
         if len(pts) >= 2:
-            draw.line(pts + [pts[0]], width=2)
+            draw.line([*pts, pts[0]], width=2)
 
         # label near first point
         x0, y0 = pts[0]

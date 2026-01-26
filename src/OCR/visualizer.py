@@ -5,7 +5,8 @@ import os
 from engine.easyocr_engine import EasyOCREngine
 from engine.ocr_engine import OCREngine
 from engine.paddleocr_engine import PaddleOCREngine
-#from engine.tesseract_engine import TesseractEngine
+
+# from engine.tesseract_engine import TesseractEngine
 from PIL import Image, ImageDraw, ImageFont
 
 
@@ -100,10 +101,10 @@ if __name__ == "__main__":
         input_img = str(image_dir / img)
         try:
             # Test Tesseract
-            #viz = OCRVisualizer(TesseractEngine())
-            #viz.process_and_annotate(
+            # viz = OCRVisualizer(TesseractEngine())
+            # viz.process_and_annotate(
             #    image_path=input_img, output_filename=f"output/tesseract/{img}"
-            #)
+            # )
 
             # Test EasyOCR
             viz = OCRVisualizer(EasyOCREngine())

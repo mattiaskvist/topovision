@@ -5,6 +5,8 @@ description = "Topovision is a tool for extracting data from topographic maps."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "geopandas>=1.1.1",
+    "matplotlib>=3.10.7",
     "easyocr>=1.7.2",
     "open3d>=0.19.0",
     "paddleocr>=3.3.2",
@@ -22,6 +24,11 @@ data-generation = [
     # (e.g., gcc on Linux, Xcode Command Line Tools on macOS, or Visual C++
     # Build Tools on Windows).
     "noise>=1.2.2",
+    "numpy>=2.3.5",
+]
+data-visualization = [
+    "geopandas>=1.0.0",
+    "matplotlib>=3.10.7",
     "numpy>=2.3.5",
 ]
 dev = [

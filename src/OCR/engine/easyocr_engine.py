@@ -12,6 +12,23 @@ class EasyOCREngine(OCREngine):
         """Initializes the EasyOCREngine with EasyOCR reader."""
         self.reader = easyocr.Reader(["en"], gpu=False)
 
+    def _preprocess(self, img: np.ndarray) -> list[np.ndarray]:
+        """Generate multiple preprocessed versions for better detection."""
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        
+        # Original grayscale
+        variants = [gray]
+        
+        # Enhanced contrast using CLAHE
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        variants.append(clahe.apply(gray))
+        
+        # Thresholded binary
+        _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        variants.append(binary)
+        
+        return variants
+
     def extract_with_polygons(
         self, image_path: str, rotations=None
     ) -> list[DetectionResult]:

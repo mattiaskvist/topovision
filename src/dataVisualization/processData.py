@@ -412,52 +412,34 @@ def compute_split_bounds(
 ) -> list[tuple]:
     """Compute smart split based on collision locations.
 
+    Always produces square sub-bounds by splitting into 4 equal quadrants.
     Returns list of sub-bounds, filtering out any that are too small.
     """
     minx, miny, maxx, maxy = bounds
-    range_x = maxx - minx
-    range_y = maxy - miny
+    range_size = maxx - minx  # Bounds should already be square
 
-    # Minimum size threshold (avoid thin slices)
-    # Don't create tiles smaller than 15% of original in either dimension
-    min_fraction = 0.15
+    # Minimum size threshold (avoid tiles too small)
+    min_size = range_size * 0.2
 
+    # Split into 4 equal square quadrants
     midx = (minx + maxx) / 2
     midy = (miny + maxy) / 2
 
-    if collision_candidates:
-        # Find average position of collisions in world coords
-        coll_x = [c.anchor_x for c in collision_candidates]
-        coll_y = [c.anchor_y for c in collision_candidates]
-
-        # Use median for split point, but clamp to reasonable range
-        split_x = np.median(coll_x)
-        split_y = np.median(coll_y)
-
-        # Clamp to 35-65% range to produce more balanced splits
-        split_x = max(minx + 0.35 * range_x, min(maxx - 0.35 * range_x, split_x))
-        split_y = max(miny + 0.35 * range_y, min(maxy - 0.35 * range_y, split_y))
-    else:
-        split_x, split_y = midx, midy
-
-    # Generate candidate bounds
+    # All quadrants are square with side = half
     all_bounds = [
-        (minx, miny, split_x, split_y),
-        (split_x, miny, maxx, split_y),
-        (minx, split_y, split_x, maxy),
-        (split_x, split_y, maxx, maxy),
+        (minx, miny, midx, midy),  # Bottom-left
+        (midx, miny, maxx, midy),  # Bottom-right
+        (minx, midy, midx, maxy),  # Top-left
+        (midx, midy, maxx, maxy),  # Top-right
     ]
 
     # Filter out bounds that are too small
     valid_bounds = []
     for b in all_bounds:
         bx_range = b[2] - b[0]
-        by_range = b[3] - b[1]
-        # Only include if both dimensions are at least min_fraction of original
-        if bx_range >= range_x * min_fraction and by_range >= range_y * min_fraction:
+        if bx_range >= min_size:
             valid_bounds.append(b)
 
-    # If all were filtered (shouldn't happen), return original bounds
     return valid_bounds if valid_bounds else all_bounds
 
 
@@ -511,8 +493,10 @@ def find_non_colliding_regions(
     _placed_indices, collision_indices = find_collisions_fast(candidates, bounds, size)
 
     # If no collisions, this region is ready
+    # Return the original gdf (not clipped) so render_final_tile can
+    # clip to square bounds
     if not collision_indices or depth >= max_depth:
-        return [(clipped, bounds, seed)]
+        return [(gdf, bounds, seed)]
 
     # Need to split - compute split bounds based on collisions
     collision_candidates = [candidates[i] for i in collision_indices]
@@ -834,6 +818,32 @@ def render_terrain_background(ax, gdf, elev_col: str, bounds: tuple, seed: int):
     return elev_min, elev_max, terrain_cmap
 
 
+def get_square_bounds(bounds: tuple) -> tuple:
+    """Expand bounds to be square, centered on original bounds.
+
+    Args:
+        bounds: (minx, miny, maxx, maxy) world coordinate bounds.
+
+    Returns:
+        Square bounds (minx, miny, maxx, maxy) with equal width and height.
+    """
+    minx, miny, maxx, maxy = bounds
+    range_x = maxx - minx
+    range_y = maxy - miny
+    max_range = max(range_x, range_y)
+
+    # Center content in square bounds
+    center_x = (minx + maxx) / 2
+    center_y = (miny + maxy) / 2
+
+    return (
+        center_x - max_range / 2,
+        center_y - max_range / 2,
+        center_x + max_range / 2,
+        center_y + max_range / 2,
+    )
+
+
 def render_mask(
     gdf: gpd.GeoDataFrame,
     bounds: tuple,
@@ -854,32 +864,60 @@ def render_mask(
         line_thickness: Thickness of contour lines in pixels (2-3 recommended).
     """
     import cv2
+    from shapely.geometry import LineString, MultiLineString
 
     if gdf.empty:
+        return
+
+    # Bounds are already square from the splitting process
+    minx, miny, maxx, maxy = bounds
+
+    # Clip GDF to bounds to get all geometries that should be visible
+    clipped_gdf = clip_gdf_to_bounds(gdf, bounds)
+    if clipped_gdf.empty:
         return
 
     # Create black mask
     mask = np.zeros((size, size), dtype=np.uint8)
 
-    # Draw each contour line in white
-    for _, row in gdf.iterrows():
-        if row.geometry is None or row.geometry.is_empty:
-            continue
+    def to_pixel_coord(x: float, y: float) -> tuple[int, int]:
+        """Convert world coords to pixel coords."""
+        px = (x - minx) / (maxx - minx) * size
+        py = (maxy - y) / (maxy - miny) * size
+        return round(px), round(py)
 
-        try:
-            line_coords = list(row.geometry.coords)
-        except Exception:
-            continue
-
-        if len(line_coords) < 2:
-            continue
-
-        # Convert world coordinates to pixel coordinates
-        pixels = [to_pixel(x, y, bounds, size) for x, y in line_coords]
+    def draw_line_coords(coords: list) -> None:
+        """Draw a single line from coordinate list."""
+        if len(coords) < 2:
+            return
+        pixels = [to_pixel_coord(x, y) for x, y in coords]
         pts = np.array(pixels, dtype=np.int32)
-
-        # Draw polyline on mask
         cv2.polylines(mask, [pts], isClosed=False, color=255, thickness=line_thickness)
+
+    # Draw each contour line in white
+    for _, row in clipped_gdf.iterrows():
+        geom = row.geometry
+        if geom is None or geom.is_empty:
+            continue
+
+        # Handle both LineString and MultiLineString geometries
+        if isinstance(geom, LineString):
+            try:
+                draw_line_coords(list(geom.coords))
+            except Exception:
+                continue
+        elif isinstance(geom, MultiLineString):
+            for line in geom.geoms:
+                try:
+                    draw_line_coords(list(line.coords))
+                except Exception:
+                    continue
+        else:
+            # Try to extract coords anyway (for other geometry types)
+            try:
+                draw_line_coords(list(geom.coords))
+            except Exception:
+                continue
 
     # Save mask
     mask_path.parent.mkdir(parents=True, exist_ok=True)
@@ -920,14 +958,32 @@ def render_final_tile(
         render_mask(gdf, bounds, mask_path, size, mask_line_thickness)
 
     rng = random.Random(seed)
+
+    # Bounds are already square from the splitting process
     minx, miny, maxx, maxy = bounds
 
-    # Create figure
+    # Clip GDF to bounds to get all geometries that should be visible
+    clipped_gdf = clip_gdf_to_bounds(gdf, bounds)
+    if clipped_gdf.empty:
+        return []
+
+    # Create figure - bounds are square so no aspect adjustment needed
     fig = plt.figure(figsize=(size / dpi, size / dpi), dpi=dpi)
+
+    # 1. Use full bleed axes [0, 0, 1, 1]
     ax = fig.add_axes([0, 0, 1, 1])
+
+    # 2. Explicitly set limits
     ax.set_xlim(minx, maxx)
     ax.set_ylim(miny, maxy)
     ax.axis("off")
+
+    # ---------------------------------------------------------
+    # CRITICAL FIX: Force auto aspect ratio
+    # This prevents GeoPandas/Matplotlib from adding margins to
+    # preserve "equal" map geometry, ensuring it matches the mask.
+    # ---------------------------------------------------------
+    ax.set_aspect("auto")
 
     # Render terrain
     elev_min, elev_max, terrain_cmap = render_terrain_background(
@@ -936,7 +992,7 @@ def render_final_tile(
 
     # Draw contour lines
     line_width = rng.uniform(0.8, 1.5)
-    for _, row in gdf.iterrows():
+    for _, row in clipped_gdf.iterrows():
         elev = row[ELEV_COLUMN]
         norm_elev = (
             (elev - elev_min) / (elev_max - elev_min) if elev_max > elev_min else 0.5
@@ -949,18 +1005,21 @@ def render_final_tile(
         else:
             line_color = "black"
 
-        gdf[gdf[ELEV_COLUMN] == elev].plot(
+        clipped_gdf[clipped_gdf[ELEV_COLUMN] == elev].plot(
             ax=ax,
             linewidth=line_width,
             edgecolor=line_color,
             facecolor="none",
             zorder=2,
+            # Pass aspect=None here purely as a safeguard,
+            # though ax.set_aspect('auto') above handles it.
+            aspect=None,
         )
 
     # Add labels
     text_objects = []
 
-    for _, row in gdf.iterrows():
+    for _, row in clipped_gdf.iterrows():
         if row.geometry is None or row.geometry.is_empty:
             continue
 
@@ -1079,7 +1138,9 @@ def process_file(
     tiles_dir = output_dir / name
     tiles_dir.mkdir(parents=True, exist_ok=True)
 
-    bounds = tuple(gdf.total_bounds)
+    # Start with square bounds to ensure all tiles are square
+    raw_bounds = tuple(gdf.total_bounds)
+    bounds = get_square_bounds(raw_bounds)
     seed = hash(input_path.name) % (2**31)
 
     print("   Finding non-colliding regions...")

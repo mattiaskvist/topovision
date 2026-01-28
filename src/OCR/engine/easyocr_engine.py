@@ -2,6 +2,7 @@
 
 import easyocr
 import cv2
+import numpy as np
 
 from .ocr_engine import DetectionResult, OCREngine, Polygon
 

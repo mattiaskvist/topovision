@@ -23,6 +23,7 @@ training = [
     "segmentation-models-pytorch>=0.3.0",
     "albumentations>=1.3.0",
     "tensorboard>=2.12.0",
+    "opencv-python-headless>=4.8.0",
 ]
 data-generation = [
     "matplotlib>=3.10.7",

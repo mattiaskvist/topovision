@@ -1234,14 +1234,15 @@ def main():
     parser.add_argument(
         "--input",
         "-i",
-        default="data/N60E014/N60E014.shp",
-        help="Input .shp or .geojson",
+        nargs="+",
+        default=["data/N60E014/N60E014.shp"],
+        help="Input .shp or .geojson file(s). Accepts multiple files or glob patterns.",
     )
     parser.add_argument(
         "--output",
         "-o",
-        default="data/dataVisualization/output/N60E014",
-        help="Output directory",
+        default="data/training",
+        help="Output directory (subdirs created per input file)",
     )
     parser.add_argument("--size", type=int, default=512, help="Tile size (square)")
     parser.add_argument("--dpi", type=int, default=150, help="Render DPI")
@@ -1259,18 +1260,43 @@ def main():
 
     args = parser.parse_args()
 
-    input_path = Path(args.input)
-    output_dir = Path(args.output)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    output_base = Path(args.output)
+    total_files = 0
+    skipped_files = 0
 
-    process_file(
-        input_path,
-        output_dir,
-        size=args.size,
-        dpi=args.dpi,
-        generate_mask=not args.no_mask,
-        mask_line_thickness=args.mask_thickness,
-    )
+    for input_file in args.input:
+        input_path = Path(input_file)
+
+        if not input_path.exists():
+            print(f"Warning: {input_path} not found, skipping")
+            skipped_files += 1
+            continue
+
+        # Create subdirectory named after the input file (without extension)
+        output_dir = output_base / input_path.stem
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        print(f"\n{'=' * 60}")
+        print(f"Processing: {input_path}")
+        print(f"Output to:  {output_dir}")
+        print("=" * 60)
+
+        process_file(
+            input_path,
+            output_dir,
+            size=args.size,
+            dpi=args.dpi,
+            generate_mask=not args.no_mask,
+            mask_line_thickness=args.mask_thickness,
+        )
+        total_files += 1
+
+    print(f"\n{'=' * 60}")
+    print(f"Finished processing {total_files} file(s)")
+    if skipped_files > 0:
+        print(f"Skipped {skipped_files} file(s) (not found)")
+    print(f"All output saved to: {output_base}")
+    print("=" * 60)
 
 
 if __name__ == "__main__":

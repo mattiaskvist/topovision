@@ -31,17 +31,23 @@ app = modal.App("topovision-training")
 data_volume = modal.Volume.from_name("topovision-data", create_if_missing=True)
 models_volume = modal.Volume.from_name("topovision-models", create_if_missing=True)
 
-# GPU training image with all dependencies via uv sync
+# GPU training image with all dependencies via pip install
+# Using pip directly instead of uv sync to avoid venv issues
 training_image = (
     modal.Image.from_registry("nvidia/cuda:12.4.0-devel-ubuntu22.04", add_python="3.12")
     .entrypoint([])
     .apt_install("libgl1-mesa-glx", "libglib2.0-0")  # OpenCV dependencies
-    .pip_install("uv")
-    .add_local_file(PROJECT_ROOT / "pyproject.toml", remote_path="/root/pyproject.toml")
-    .add_local_file(PROJECT_ROOT / "uv.lock", remote_path="/root/uv.lock")
-    .run_commands("cd /root && uv sync --group training --frozen")
-    .add_local_dir(PROJECT_ROOT / "src", remote_path="/root/src")
+    .pip_install(
+        "torch>=2.0.0",
+        "torchvision>=0.15.0",
+        "segmentation-models-pytorch>=0.3.0",
+        "albumentations>=1.3.0",
+        "tensorboard>=2.12.0",
+        "opencv-python-headless>=4.8.0",
+        "numpy",
+    )
     .env({"PYTHONPATH": "/root"})
+    .add_local_dir(PROJECT_ROOT / "src", remote_path="/root/src")  # mounted at runtime
 )
 
 
@@ -122,15 +128,10 @@ def train_remote(
     volumes={"/data": data_volume},
     timeout=3600,  # 1 hour for upload
 )
-def upload_data(local_path: str = "data/training/N60E014") -> int:
-    """Upload training data to Modal volume.
-
-    This function is called locally but the actual upload happens
-    via the local_entrypoint below.
-    """
+def upload_data(local_path: str = "data/training") -> int:
+    """Count files in the Modal data volume."""
     import os
 
-    # Count files in the data volume
     file_count = 0
     for _root, _dirs, files in os.walk("/data"):
         file_count += len(files)
@@ -140,8 +141,11 @@ def upload_data(local_path: str = "data/training/N60E014") -> int:
 
 
 @app.local_entrypoint()
-def upload_data_local(local_path: str = "data/training/N60E014"):
-    """Upload local training data to Modal volume.
+def upload_data_local(local_path: str = "data/training"):
+    """Upload local training data to Modal volume (recursive).
+
+    Uploads all PNG files from the specified directory and its subdirectories,
+    preserving the directory structure.
 
     Args:
         local_path: Local path to training data directory.
@@ -151,21 +155,27 @@ def upload_data_local(local_path: str = "data/training/N60E014"):
         print(f"Error: Local path does not exist: {local_dir}")
         return
 
-    # Count PNG files
-    png_files = list(local_dir.glob("*.png"))
+    # Find all PNG files recursively
+    png_files = list(local_dir.rglob("*.png"))
     print(f"Found {len(png_files)} PNG files in {local_dir}")
 
     if not png_files:
         print("No PNG files found. Exiting.")
         return
 
-    # Upload files to volume
+    # Upload files to volume, preserving directory structure
     print("Uploading to Modal volume 'topovision-data'...")
 
-    # Use Modal's volume upload
     with data_volume.batch_upload() as batch:
-        for png_file in png_files:
-            batch.put_file(png_file, f"/{png_file.name}")
+        for i, png_file in enumerate(png_files):
+            # Preserve relative path structure
+            rel_path = png_file.relative_to(local_dir)
+            remote_path = f"/{rel_path}"
+            batch.put_file(png_file, remote_path)
+
+            # Progress update every 500 files
+            if (i + 1) % 500 == 0:
+                print(f"  Uploaded {i + 1}/{len(png_files)} files...")
 
     print(f"✓ Uploaded {len(png_files)} files to volume")
 

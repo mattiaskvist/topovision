@@ -834,6 +834,58 @@ def render_terrain_background(ax, gdf, elev_col: str, bounds: tuple, seed: int):
     return elev_min, elev_max, terrain_cmap
 
 
+def render_mask(
+    gdf: gpd.GeoDataFrame,
+    bounds: tuple,
+    mask_path: Path,
+    size: int = 512,
+    line_thickness: int = 2,
+) -> None:
+    """Render binary segmentation mask with contour lines only.
+
+    Creates a mask where all contour lines are drawn in white (255) on black
+    background. No terrain, labels, or other visual elements.
+
+    Args:
+        gdf: GeoDataFrame with contour line geometries.
+        bounds: (minx, miny, maxx, maxy) world coordinate bounds.
+        mask_path: Output path for the mask PNG.
+        size: Output image size in pixels (square).
+        line_thickness: Thickness of contour lines in pixels (2-3 recommended).
+    """
+    import cv2
+
+    if gdf.empty:
+        return
+
+    # Create black mask
+    mask = np.zeros((size, size), dtype=np.uint8)
+
+    # Draw each contour line in white
+    for _, row in gdf.iterrows():
+        if row.geometry is None or row.geometry.is_empty:
+            continue
+
+        try:
+            line_coords = list(row.geometry.coords)
+        except Exception:
+            continue
+
+        if len(line_coords) < 2:
+            continue
+
+        # Convert world coordinates to pixel coordinates
+        pixels = [to_pixel(x, y, bounds, size) for x, y in line_coords]
+        pts = np.array(pixels, dtype=np.int32)
+
+        # Draw polyline on mask
+        cv2.polylines(mask, [pts], isClosed=False, color=255, thickness=line_thickness)
+
+    # Save mask
+    mask_path.parent.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(mask_path), mask)
+
+
 def render_final_tile(
     gdf: gpd.GeoDataFrame,
     bounds: tuple,
@@ -841,10 +893,31 @@ def render_final_tile(
     seed: int,
     size: int = 512,
     dpi: int = 150,
+    generate_mask: bool = True,
+    mask_line_thickness: int = 2,
 ) -> list[dict]:
-    """Render a tile that has been verified to have no collisions."""
+    """Render a tile that has been verified to have no collisions.
+
+    Args:
+        gdf: GeoDataFrame with contour lines.
+        bounds: World coordinate bounds (minx, miny, maxx, maxy).
+        img_path: Output path for the rendered tile image.
+        seed: Random seed for reproducible styling.
+        size: Output image size in pixels.
+        dpi: Render DPI.
+        generate_mask: If True, also generate a binary segmentation mask.
+        mask_line_thickness: Line thickness for the mask (2-3 recommended).
+
+    Returns:
+        List of label dictionaries with elevation, bbox, and contour pixels.
+    """
     if gdf.empty or ELEV_COLUMN not in gdf.columns:
         return []
+
+    # Generate mask if requested
+    if generate_mask:
+        mask_path = img_path.parent / f"{img_path.stem}_mask.png"
+        render_mask(gdf, bounds, mask_path, size, mask_line_thickness)
 
     rng = random.Random(seed)
     minx, miny, maxx, maxy = bounds
@@ -973,8 +1046,24 @@ def render_final_tile(
 # =============================================================================
 
 
-def process_file(input_path: Path, output_dir: Path, size: int = 512, dpi: int = 150):
-    """Process one shapefile with adaptive splitting."""
+def process_file(
+    input_path: Path,
+    output_dir: Path,
+    size: int = 512,
+    dpi: int = 150,
+    generate_mask: bool = True,
+    mask_line_thickness: int = 2,
+):
+    """Process one shapefile with adaptive splitting.
+
+    Args:
+        input_path: Path to input .shp or .geojson file.
+        output_dir: Output directory for generated tiles.
+        size: Tile size in pixels (square).
+        dpi: Render DPI.
+        generate_mask: If True, generate binary segmentation masks alongside tiles.
+        mask_line_thickness: Line thickness for masks (2-3 recommended).
+    """
     print(f"📂 Loading {input_path.name}...")
     gdf = gpd.read_file(input_path)
 
@@ -1009,22 +1098,29 @@ def process_file(input_path: Path, output_dir: Path, size: int = 512, dpi: int =
         labels_path = tiles_dir / f"{tile_id}_labels.json"
 
         labels = render_final_tile(
-            region_gdf, region_bounds, img_path, region_seed, size, dpi
+            region_gdf,
+            region_bounds,
+            img_path,
+            region_seed,
+            size,
+            dpi,
+            generate_mask=generate_mask,
+            mask_line_thickness=mask_line_thickness,
         )
 
-        # Save labels JSON
+        # Save labels JSON (include mask path if generated)
+        json_data = {
+            "image": {
+                "path": f"{tile_id}.png",
+                "size": {"height": size, "width": size},
+            },
+            "labels": labels,
+        }
+        if generate_mask:
+            json_data["mask"] = {"path": f"{tile_id}_mask.png"}
+
         with open(labels_path, "w") as f:
-            json.dump(
-                {
-                    "image": {
-                        "path": f"{tile_id}.png",
-                        "size": {"height": size, "width": size},
-                    },
-                    "labels": labels,
-                },
-                f,
-                indent=2,
-            )
+            json.dump(json_data, f, indent=2)
 
         all_tiles.append(
             {
@@ -1048,7 +1144,13 @@ def process_file(input_path: Path, output_dir: Path, size: int = 512, dpi: int =
         json.dump(
             {
                 "source": input_path.name,
-                "config": {"tile_size": size, "dpi": dpi, "method": "adaptive_split"},
+                "config": {
+                    "tile_size": size,
+                    "dpi": dpi,
+                    "method": "adaptive_split",
+                    "generate_mask": generate_mask,
+                    "mask_line_thickness": mask_line_thickness,
+                },
                 "elevation_range": [float(elev_range[0]), float(elev_range[1])],
                 "total_tiles": len(all_tiles),
                 "total_labels": total_labels,
@@ -1058,7 +1160,8 @@ def process_file(input_path: Path, output_dir: Path, size: int = 512, dpi: int =
             indent=2,
         )
 
-    print(f"\nComplete: {len(all_tiles)} tiles, {total_labels} labels")
+    mask_msg = " + masks" if generate_mask else ""
+    print(f"\nComplete: {len(all_tiles)} tiles{mask_msg}, {total_labels} labels")
     print(f"Output: {tiles_dir}\n")
 
 
@@ -1070,17 +1173,28 @@ def main():
     parser.add_argument(
         "--input",
         "-i",
-        default="data/dataVisualization/dataExample/N63E016/N63E016.shp",
+        default="data/N60E014/N60E014.shp",
         help="Input .shp or .geojson",
     )
     parser.add_argument(
         "--output",
         "-o",
-        default="data/dataVisualization/output/new/example_output",
+        default="data/dataVisualization/output/N60E014",
         help="Output directory",
     )
     parser.add_argument("--size", type=int, default=512, help="Tile size (square)")
     parser.add_argument("--dpi", type=int, default=150, help="Render DPI")
+    parser.add_argument(
+        "--no-mask",
+        action="store_true",
+        help="Disable binary mask generation for segmentation training",
+    )
+    parser.add_argument(
+        "--mask-thickness",
+        type=int,
+        default=2,
+        help="Line thickness for masks (default: 2)",
+    )
 
     args = parser.parse_args()
 
@@ -1088,7 +1202,14 @@ def main():
     output_dir = Path(args.output)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    process_file(input_path, output_dir, size=args.size, dpi=args.dpi)
+    process_file(
+        input_path,
+        output_dir,
+        size=args.size,
+        dpi=args.dpi,
+        generate_mask=not args.no_mask,
+        mask_line_thickness=args.mask_thickness,
+    )
 
 
 if __name__ == "__main__":

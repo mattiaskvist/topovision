@@ -93,6 +93,60 @@ The model uses a pretrained encoder backbone. Options:
 - `mps` — Apple Silicon GPU
 - `cpu` — CPU only (slow)
 
+## Cloud GPU Training with Modal
+
+For faster training, use Modal to run on cloud GPUs (NVIDIA T4).
+
+### Setup
+
+```bash
+# Install Modal
+uv sync --group cloud
+
+# Authenticate (one-time)
+uv run modal token new
+```
+
+### Upload Training Data
+
+Upload your training data to a persistent Modal volume (run once):
+
+```bash
+modal run src/training/modal_train.py::upload_data_local --local-path data/training/N60E014
+```
+
+### Run Training
+
+```bash
+# Basic training (100 epochs, batch size 8, resnet34 encoder)
+modal run src/training/modal_train.py
+
+# With custom options
+modal run src/training/modal_train.py --epochs 150 --batch-size 16 --encoder resnet50
+```
+
+Training runs on a T4 GPU with a 4-hour timeout. Progress is printed to the console.
+
+### Download Results
+
+After training completes, download the models and TensorBoard logs:
+
+```bash
+# List available runs
+modal run src/training/modal_train.py::list_runs
+
+# Download a specific run
+modal run src/training/modal_train.py::download_results --run-name run_20260128_150000
+```
+
+Results are saved to `models/{run_name}/`.
+
+### View TensorBoard Logs
+
+```bash
+uv run tensorboard --logdir models/run_20260128_150000/tensorboard
+```
+
 ## Monitoring Training
 
 Training logs are saved to TensorBoard:

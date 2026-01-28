@@ -88,6 +88,7 @@ class EasyOCREngine(OCREngine):
                               Note: Adding angles increases processing time.
             scale_factor (float): scaling factor before doing OCR on image.
         """
+        assert scale_factor > 0, "has to be positive"
         if rotations is not None:
             print("Warning, rotations are not used now!!")
 

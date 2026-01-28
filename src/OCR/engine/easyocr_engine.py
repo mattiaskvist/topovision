@@ -78,19 +78,15 @@ class EasyOCREngine(OCREngine):
         return variants
 
     def extract_with_polygons(
-        self, image_path: str, rotations=None, scale_factor: float = 2.5
+        self, image_path: str, scale_factor: float = 2.5
     ) -> list[DetectionResult]:
         """Extract text with polygons.
 
         Args:
             image_path (str): Path to image.
-            rotations (list): List of angles to check. Defaults to [90, 180, 270].
-                              Note: Adding angles increases processing time.
             scale_factor (float): scaling factor before doing OCR on image.
         """
         assert scale_factor > 0, "has to be positive"
-        if rotations is not None:
-            print("Warning, rotations are not used now!!")
 
         img_orig = cv2.imread(str(image_path))
         if img_orig is None:

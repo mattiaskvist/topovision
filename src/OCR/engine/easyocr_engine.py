@@ -1,6 +1,7 @@
 """Engine to perform OCR on images using EasyOCR."""
 
 import easyocr
+import cv2
 
 from .ocr_engine import DetectionResult, OCREngine, Polygon
 

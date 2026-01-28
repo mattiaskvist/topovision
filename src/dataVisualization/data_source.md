@@ -9,5 +9,5 @@ Place the downloaded `.shp` or `.geojson` file in `data/dataVisualization/dataEx
 
 Example command:
 ```bash
-python src/dataVisualization/processData.py --input data/dataVisualization/dataExample/N63E016/N63E016.shp --output data/dataVisualization/output/example_output
+uv run python src/dataVisualization/processData.py --input data/dataVisualization/dataExample/N63E016/N63E016.shp --output data/dataVisualization/output/new/example_output
 ```

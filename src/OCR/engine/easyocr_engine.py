@@ -13,6 +13,50 @@ class EasyOCREngine(OCREngine):
         """Initializes the EasyOCREngine with EasyOCR reader."""
         self.reader = easyocr.Reader(["en"], gpu=False)
 
+    def _nms(self, results: list[DetectionResult], iou_thresh: float = 0.3) -> list[DetectionResult]:
+        """Non-maximum suppression to remove overlapping detections."""
+        if not results:
+            return []
+        
+        # Sort by confidence descending
+        results = sorted(results, key=lambda x: x.confidence, reverse=True)
+        keep = []
+        
+        for result in results:
+            # Get bounding box from polygon points
+            points = result.polygon.points
+            x1 = min(p[0] for p in points)
+            y1 = min(p[1] for p in points)
+            x2 = max(p[0] for p in points)
+            y2 = max(p[1] for p in points)
+            
+            overlap = False
+            for kept in keep:
+                # Get bounding box from kept polygon
+                kept_points = kept.polygon.points
+                kx1 = min(p[0] for p in kept_points)
+                ky1 = min(p[1] for p in kept_points)
+                kx2 = max(p[0] for p in kept_points)
+                ky2 = max(p[1] for p in kept_points)
+                
+                # Calculate IoU
+                ix1, iy1 = max(x1, kx1), max(y1, ky1)
+                ix2, iy2 = min(x2, kx2), min(y2, ky2)
+                inter = max(0, ix2 - ix1) * max(0, iy2 - iy1)
+                area1 = (x2 - x1) * (y2 - y1)
+                area2 = (kx2 - kx1) * (ky2 - ky1)
+                union = area1 + area2 - inter
+                iou = inter / union if union > 0 else 0
+                
+                if iou > iou_thresh:
+                    overlap = True
+                    break
+            
+            if not overlap:
+                keep.append(result)
+        
+        return keep
+
     def _preprocess(self, img: np.ndarray) -> list[np.ndarray]:
         """Generate multiple preprocessed versions for better detection."""
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -75,16 +119,5 @@ class EasyOCREngine(OCREngine):
                 polygon = Polygon(points=scaled_points)
                 results.append(DetectionResult(text=text, polygon=polygon, confidence=conf))
         
-        # TODO Add non max suppression at the end!
-
-
-        # -------
-
-        """
-        results = []
-        for coord, text, conf in raw_output:
-            polygon = Polygon(points=[tuple(map(int, point)) for point in coord])
-            results.append(DetectionResult(text=text, polygon=polygon, confidence=conf))
-        """
-            
+        results = self._nms(results)
         return results

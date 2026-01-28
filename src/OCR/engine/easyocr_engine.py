@@ -85,7 +85,8 @@ class EasyOCREngine(OCREngine):
             rotations (list): List of angles to check. Defaults to [90, 180, 270].
                               Note: Adding angles increases processing time.
         """
-        assert rotations is None, "rotations are not used now"
+        if rotations is not None:
+            print("Warning, rotations are not used now!!")
 
         img_orig = cv2.imread(str(image_path))
         if img_orig is None:

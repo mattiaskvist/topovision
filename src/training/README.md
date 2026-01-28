@@ -172,6 +172,23 @@ models/
 
 ## Using the Trained Model
 
+### Test it
+
+```bash
+# Test on a single image from your training data
+uv run python -m src.training.test_model \
+    --model models/run_20260128_174113/best_model.pt \
+    --image data/training/N60E014/N60E014_0000.png \
+    --mask data/training/N60E014/N60E014_0000_mask.png \
+    --device mps
+
+# Test on a real map image (no ground truth)
+uv run python -m src.training.test_model \
+    --model models/run_XXXXX/best_model.pt \
+    --image path/to/real/map.png \
+    --device mps
+```
+
 ### In Python
 
 ```python

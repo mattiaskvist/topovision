@@ -264,6 +264,17 @@ if __name__ == "__main__":
         print(f"\n--- Processing {image_path.name} ---")
         result = pipeline.run(str(image_path), str(mask_path), drop_ratio=0.0)
 
+        # Save intermediate predicted mask for debugging
+        predicted_mask = pipeline.contour_engine.predict_mask(str(image_path))
+        mask_output_path = (
+            project_root
+            / "output"
+            / "height_extraction"
+            / image_path.name.replace(".png", "_predicted_mask.png")
+        )
+        cv2.imwrite(str(mask_output_path), predicted_mask)
+        print(f"Saved predicted mask to {mask_output_path}")
+
         output_path = (
             project_root
             / "output"

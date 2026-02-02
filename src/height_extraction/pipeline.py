@@ -8,8 +8,9 @@ import numpy as np
 
 from contour.engine.contour_engine import ContourExtractionEngine
 from contour.engine.cv2_contour_engine import CV2ContourEngine
+from contour.engine.unet_contour_engine import UNetContourEngine
+from OCR.engine.easyocr_engine import EasyOCREngine
 from OCR.engine.ocr_engine import OCREngine
-from OCR.engine.paddleocr_engine import PaddleOCREngine
 
 from .inference import build_adjacency_graph, infer_missing_heights
 from .matcher import match_text_to_contours
@@ -45,7 +46,7 @@ class HeightExtractionPipeline:
             contour_engine: Optional custom contour engine. Defaults to
                 CV2ContourEngine.
         """
-        self.ocr_engine = ocr_engine or PaddleOCREngine()
+        self.ocr_engine = ocr_engine or EasyOCREngine()
         self.contour_engine = contour_engine or CV2ContourEngine()
 
     def run(
@@ -75,8 +76,12 @@ class HeightExtractionPipeline:
             print(f"Dropped {drop_ratio:.0%} of detections. Keeping {len(detections)}.")
 
         # 2. Contour Extraction
+        # CV2ContourEngine expects mask path because it cant handle numbers
         print("Extracting contours...")
-        contours = self.contour_engine.extract_contours(mask_path)
+        if isinstance(self.contour_engine, CV2ContourEngine):
+            contours = self.contour_engine.extract_contours(mask_path)
+        else:
+            contours = self.contour_engine.extract_contours(image_path)
         print(f"Extracted {len(contours)} contours.")
 
         # 3. Matching
@@ -220,69 +225,69 @@ if __name__ == "__main__":
     import glob
     from pathlib import Path
 
-    from OCR.engine.mock_ocr_engine import MockOCREngine
-
     current_dir = Path(__file__).parent
     project_root = current_dir.parent.parent
-    data_dir = project_root / "data" / "synthetic" / "perlin_noise"
-    annotations_path = data_dir / "coco_annotations.json"
+    data_dir = project_root / "data" / "training" / "N60E013/N60E013/"
 
     # Find all image files
-    image_files = sorted(glob.glob(str(data_dir / "*_image.png")))
+    image_files = sorted(glob.glob(str(data_dir / "*.png")))
+
+    # exclude files that are masks
+    image_files = [f for f in image_files if "_mask" not in f]
 
     if not image_files:
         print("No synthetic images found.")
         exit(1)
 
-    if annotations_path.exists():
-        # Use Mock OCR and CV2 Contour Engine
-        ocr_engine = MockOCREngine(str(annotations_path))
-        contour_engine = CV2ContourEngine()
-        pipeline = HeightExtractionPipeline(
-            ocr_engine=ocr_engine, contour_engine=contour_engine
+    ocr_engine = EasyOCREngine()
+    contour_engine = UNetContourEngine(
+        model_path=project_root / "models/run_20260128_174113/best_model.pt",
+        device="cpu",
+        threshold=0.5,
+    )
+    pipeline = HeightExtractionPipeline(
+        ocr_engine=ocr_engine, contour_engine=contour_engine
+    )
+
+    # process 5 images
+    N_IMAGES = 5
+    image_files = image_files[:N_IMAGES]
+    for image_file in image_files:
+        image_path = Path(image_file)
+        # Assuming mask has same name but _mask suffix
+        mask_path = image_path.parent / image_path.name.replace(".png", "_mask.png")
+
+        if not mask_path.exists():
+            print(f"Mask not found for {image_path}, skipping.")
+            continue
+
+        print(f"\n--- Processing {image_path.name} ---")
+        result = pipeline.run(str(image_path), str(mask_path), drop_ratio=0.0)
+
+        output_path = (
+            project_root
+            / "output"
+            / "height_extraction"
+            / image_path.name.replace(".png", "_result.png")
         )
+        pipeline.visualize(result, str(output_path))
 
-        for image_file in image_files:
-            image_path = Path(image_file)
-            # Assuming mask has same name but _mask suffix
-            mask_path = image_path.parent / image_path.name.replace(
-                "_image.png", "_mask.png"
-            )
+        # Generate 3D mesh
+        mesh_output_path = (
+            project_root
+            / "output"
+            / "height_extraction"
+            / image_path.name.replace(".png", "_mesh.obj")
+        )
+        pipeline.generate_mesh(result, str(mesh_output_path))
 
-            if not mask_path.exists():
-                print(f"Mask not found for {image_path}, skipping.")
-                continue
+        # Set to False to disable interactive 3D visualization (blocks execution)
+        VISUALIZE_3D = False
+        if VISUALIZE_3D:
+            pipeline.display_mesh(str(mesh_output_path))
 
-            print(f"\n--- Processing {image_path.name} ---")
-            result = pipeline.run(str(image_path), str(mask_path), drop_ratio=0.0)
-
-            output_path = (
-                project_root
-                / "output"
-                / "height_extraction"
-                / image_path.name.replace("_image.png", "_result.png")
-            )
-            pipeline.visualize(result, str(output_path))
-
-            # Generate 3D mesh
-            mesh_output_path = (
-                project_root
-                / "output"
-                / "height_extraction"
-                / image_path.name.replace("_image.png", "_mesh.obj")
-            )
-            pipeline.generate_mesh(result, str(mesh_output_path))
-
-            # Set to False to disable interactive 3D visualization (blocks execution)
-            VISUALIZE_3D = True
-            if VISUALIZE_3D:
-                pipeline.display_mesh(str(mesh_output_path))
-
-            # Print summary stats
-            total = len(result.contours)
-            known = sum(1 for c in result.contours if c.source == "ocr")
-            inferred = sum(1 for c in result.contours if c.source == "inference")
-            print(f"Summary: {total} contours, {known} from OCR, {inferred} inferred.")
-
-    else:
-        print("Annotations not found.")
+        # Print summary stats
+        total = len(result.contours)
+        known = sum(1 for c in result.contours if c.source == "ocr")
+        inferred = sum(1 for c in result.contours if c.source == "inference")
+        print(f"Summary: {total} contours, {known} from OCR, {inferred} inferred.")

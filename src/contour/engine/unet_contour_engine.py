@@ -17,7 +17,7 @@ class UNetContourEngine(ContourExtractionEngine):
     individual contours from the predicted mask.
 
     Attributes:
-        model_path: Path to the trained model checkpoint.
+        model_path: Path to the trained model checkpoint (local or HF Hub).
         device: Torch device for inference.
         threshold: Probability threshold for binary prediction.
         min_length: Minimum contour length to keep.
@@ -26,22 +26,27 @@ class UNetContourEngine(ContourExtractionEngine):
 
     def __init__(
         self,
-        model_path: str | Path,
+        model_path: str | Path | None = None,
         device: str = "cuda",
         threshold: float = 0.5,
         min_length: float = 50.0,
         epsilon_factor: float = 0.005,
+        hf_repo_id: str | None = None,
+        hf_filename: str = "best_model.pt",
     ):
         """Initialize the U-Net contour engine.
 
         Args:
-            model_path: Path to the trained model checkpoint (.pt file).
+            model_path: Path to a local model checkpoint (.pt file).
+                If None, will download from Hugging Face Hub.
             device: Device for inference ("cuda", "mps", or "cpu").
             threshold: Probability threshold for binarizing predictions.
             min_length: Minimum contour length to keep.
             epsilon_factor: Factor for approximation accuracy.
+            hf_repo_id: Hugging Face Hub repository ID.
+                Used if model_path is None.
+            hf_filename: Filename of the model in the HF repo.
         """
-        self.model_path = Path(model_path)
         self.threshold = threshold
         self.min_length = min_length
         self.epsilon_factor = epsilon_factor
@@ -54,6 +59,16 @@ class UNetContourEngine(ContourExtractionEngine):
         else:
             self.device = torch.device("cpu")
 
+        # Resolve model path
+        if model_path is not None:
+            self.model_path = Path(model_path)
+        else:
+            # Download from Hugging Face Hub
+            self.model_path = self._download_from_hub(
+                hf_repo_id or "mattiaskvist/topovision-unet",
+                hf_filename,
+            )
+
         # Load model
         self.model = self._load_model()
         self.model.eval()
@@ -61,6 +76,30 @@ class UNetContourEngine(ContourExtractionEngine):
         # ImageNet normalization stats
         self.mean = np.array([0.485, 0.456, 0.406])
         self.std = np.array([0.229, 0.224, 0.225])
+
+    def _download_from_hub(self, repo_id: str, filename: str) -> Path:
+        """Download model weights from Hugging Face Hub.
+
+        Args:
+            repo_id: Repository ID on Hugging Face Hub.
+            filename: Name of the model file to download.
+
+        Returns:
+            Path to the downloaded model file.
+        """
+        try:
+            from huggingface_hub import hf_hub_download
+        except ImportError as e:
+            msg = "huggingface_hub not installed. Run: pip install huggingface-hub"
+            raise ImportError(msg) from e
+
+        print(f"Downloading model from {repo_id}/{filename}...")
+        model_path = hf_hub_download(
+            repo_id=repo_id,
+            filename=filename,
+        )
+        print(f"Model downloaded to: {model_path}")
+        return Path(model_path)
 
     def _load_model(self) -> torch.nn.Module:
         """Load the trained U-Net model from checkpoint.

@@ -241,7 +241,8 @@ if __name__ == "__main__":
 
     ocr_engine = EasyOCREngine()
     contour_engine = UNetContourEngine(
-        model_path=project_root / "models/run_20260128_174113/best_model.pt",
+        hf_repo_id="mattiaskvist/topovision-unet",
+        hf_filename="best_model.pt",
         device="cpu",
         threshold=0.5,
     )

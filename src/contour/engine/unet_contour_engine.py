@@ -145,15 +145,15 @@ class UNetContourEngine(ContourExtractionEngine):
 
         return mask
 
-    def extract_contours(self, mask_path: str) -> list[np.ndarray]:
+    def extract_contours(self, image_path: str) -> list[np.ndarray]:
         """Extract contours from an image using U-Net prediction.
 
-        Note: Despite the parameter name 'mask_path' (for interface compatibility),
+        Note: Despite the parameter name 'image_path' (for interface compatibility),
         this method expects an INPUT IMAGE (with terrain, text, etc.), not a mask.
         The U-Net predicts the mask internally.
 
         Args:
-            mask_path: Path to the input image (not a pre-existing mask).
+            image_path: Path to the input image (not a pre-existing mask).
 
         Returns:
             List of contours, where each contour is a numpy array of shape (N, 1, 2).
@@ -161,23 +161,7 @@ class UNetContourEngine(ContourExtractionEngine):
         Raises:
             FileNotFoundError: If the image file cannot be read.
         """
-        # Load image
-        image = cv2.imread(mask_path)
-        if image is None:
-            raise FileNotFoundError(f"Could not read image at {mask_path}")
-
-        # Convert BGR to RGB
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-
-        # Preprocess
-        input_tensor, original_size = self._preprocess_image(image)
-
-        # Run inference
-        with torch.no_grad():
-            logits = self.model(input_tensor)
-
-        # Postprocess to binary mask
-        mask = self._postprocess_mask(logits, original_size)
+        mask = self.predict_mask(image_path)
 
         # Extract contours from predicted mask
         return self._extract_contours_from_mask(mask)

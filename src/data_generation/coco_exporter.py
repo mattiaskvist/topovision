@@ -97,13 +97,13 @@ class COCOInstanceExporter:
         >>> exporter.save()
     """
 
-    def __init__(self, output_path: Path):
+    def __init__(self, output_path: Path | str):
         """Initialize the exporter.
 
         Args:
             output_path: Path where the COCO JSON will be saved.
         """
-        self.output_path = output_path
+        self.output_path = Path(output_path)
 
         # Initialize COCO structure
         self._images: list[dict] = []
@@ -247,6 +247,7 @@ def convert_tiles_to_coco(
         output_path: Path for the output COCO JSON file.
         pattern: Glob pattern for finding label files.
     """
+    tiles_dir = Path(tiles_dir)
     exporter = COCOInstanceExporter(output_path=output_path)
 
     # Find all label files

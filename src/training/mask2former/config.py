@@ -34,6 +34,7 @@ class Mask2FormerTrainingConfig:
     Attributes:
         output_dir: Directory to save model checkpoints.
         num_epochs: Number of training epochs.
+        batch_size: Batch size for training.
         learning_rate: Initial learning rate.
         weight_decay: Weight decay for optimizer.
         warmup_steps: Number of warmup steps.
@@ -47,6 +48,7 @@ class Mask2FormerTrainingConfig:
 
     output_dir: Path = field(default_factory=lambda: Path("models/mask2former"))
     num_epochs: int = 50
+    batch_size: int = 4
     learning_rate: float = 1e-4
     weight_decay: float = 0.01
     warmup_steps: int = 500

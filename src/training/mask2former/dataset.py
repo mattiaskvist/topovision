@@ -27,7 +27,7 @@ class Mask2FormerDataset(Dataset):
     - {tile_id}_labels.json: Labels with instance info
 
     Args:
-        data_dir: Directory containing tile files.
+        data_dirs: Directory or list of directories containing tile files.
         image_size: Target image size for resizing.
         use_processor: If True, use Mask2FormerImageProcessor for preprocessing.
         processor: Optional pre-initialized processor.
@@ -35,7 +35,7 @@ class Mask2FormerDataset(Dataset):
 
     def __init__(
         self,
-        data_dir: Path | str,
+        data_dirs: Path | str | list[Path | str],
         image_size: int = 512,
         use_processor: bool = False,
         processor=None,
@@ -43,18 +43,23 @@ class Mask2FormerDataset(Dataset):
         """Initialize the dataset.
 
         Args:
-            data_dir: Directory containing tile files.
+            data_dirs: Directory or list of directories containing tile files.
             image_size: Target image size for resizing.
             use_processor: If True, use Mask2FormerImageProcessor for preprocessing.
             processor: Optional pre-initialized processor.
         """
-        self.data_dir = Path(data_dir)
+        # Handle single dir or list of dirs
+        if isinstance(data_dirs, (str, Path)):
+            data_dirs = [data_dirs]
+        self.data_dirs = [Path(d) for d in data_dirs]
         self.image_size = image_size
         self.use_processor = use_processor
         self.processor = processor
 
-        # Find all label files
-        self.label_files = sorted(self.data_dir.glob("*_labels.json"))
+        # Find all label files from all directories
+        self.label_files = []
+        for data_dir in self.data_dirs:
+            self.label_files.extend(sorted(data_dir.glob("*_labels.json")))
 
         # Filter to only include tiles with instance masks
         self.samples: list[dict] = []
@@ -65,8 +70,10 @@ class Mask2FormerDataset(Dataset):
             if "instance_mask" not in data:
                 continue
 
-            image_path = self.data_dir / data["image"]["path"]
-            instance_mask_path = self.data_dir / data["instance_mask"]["path"]
+            # Get the directory containing this label file
+            tile_dir = label_file.parent
+            image_path = tile_dir / data["image"]["path"]
+            instance_mask_path = tile_dir / data["instance_mask"]["path"]
 
             if image_path.exists() and instance_mask_path.exists():
                 self.samples.append(
@@ -209,7 +216,7 @@ def collate_fn(batch: list[dict]) -> dict:
 
 
 def create_mask2former_dataloaders(
-    data_dir: Path | str,
+    data_dirs: Path | str | list[Path | str],
     batch_size: int = 4,
     val_split: float = 0.1,
     image_size: int = 512,
@@ -219,7 +226,7 @@ def create_mask2former_dataloaders(
     """Create train and validation dataloaders.
 
     Args:
-        data_dir: Directory containing tile files.
+        data_dirs: Directory or list of directories containing tile files.
         batch_size: Batch size for both dataloaders.
         val_split: Fraction of data for validation.
         image_size: Target image size.
@@ -230,7 +237,7 @@ def create_mask2former_dataloaders(
         Tuple of (train_dataloader, val_dataloader).
     """
     # Create full dataset
-    dataset = Mask2FormerDataset(data_dir=data_dir, image_size=image_size)
+    dataset = Mask2FormerDataset(data_dirs=data_dirs, image_size=image_size)
 
     # Calculate split sizes
     total = len(dataset)

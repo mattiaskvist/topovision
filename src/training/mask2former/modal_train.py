@@ -6,11 +6,17 @@ which have sufficient memory for Mask2Former models.
 Usage:
     # One-time: Upload training data with instance masks to Modal volume
     modal run src/training/mask2former/modal_train.py::upload_data \
-        --local-path data/training/N60E014
+        --local-path data/training/N60E014/N60E014
 
-    # Run training on cloud A10G GPU
+    # Upload multiple directories
+    modal run src/training/mask2former/modal_train.py::upload_data \
+        --local-path data/training/N60E012/N60E012
+    modal run src/training/mask2former/modal_train.py::upload_data \
+        --local-path data/training/N60E013/N60E013
+
+    # Run training on cloud A10G GPU with multiple data directories
     modal run src/training/mask2former/modal_train.py::train_remote \
-        --epochs 50 --batch-size 4
+        --epochs 50 --batch-size 4 --data-subdirs N60E012 N60E013 N60E014
 
     # Download results after training
     modal run src/training/mask2former/modal_train.py::download_results \
@@ -69,7 +75,7 @@ def train_remote(
     learning_rate: float = 1e-4,
     val_split: float = 0.1,
     gradient_accumulation: int = 1,
-    data_subdir: str = "",
+    data_subdirs: list[str] | None = None,
 ) -> str:
     """Run Mask2Former training on Modal cloud GPU.
 
@@ -79,7 +85,8 @@ def train_remote(
         learning_rate: Initial learning rate.
         val_split: Fraction of data for validation.
         gradient_accumulation: Gradient accumulation steps.
-        data_subdir: Subdirectory in /data volume containing training data.
+        data_subdirs: List of subdirectories in /data volume containing training data.
+                      If None, auto-discovers all directories with instance masks.
 
     Returns:
         Name of the run directory containing trained models.
@@ -87,30 +94,38 @@ def train_remote(
     from src.training.mask2former.config import Mask2FormerTrainingConfig
     from src.training.mask2former.train import train
 
-    # Find training data
-    data_dir = Path("/data")
-    if data_subdir:
-        data_dir = data_dir / data_subdir
+    # Find training data directories
+    data_root = Path("/data")
+    data_dirs: list[Path] = []
 
-    # Look for tiles with instance masks
-    if not list(data_dir.glob("*_instance_mask.png")):
-        # Try to find a subdirectory with data
-        subdirs = [d for d in data_dir.iterdir() if d.is_dir()]
-        for subdir in subdirs:
-            if list(subdir.glob("*_instance_mask.png")):
-                data_dir = subdir
-                break
+    if data_subdirs:
+        # Use specified subdirectories
+        for subdir in data_subdirs:
+            subdir_path = data_root / subdir
+            if subdir_path.exists() and list(subdir_path.glob("*_instance_mask.png")):
+                data_dirs.append(subdir_path)
+            else:
+                print(f"Warning: No instance masks found in {subdir_path}")
+    else:
+        # Auto-discover all directories with instance masks
+        for subdir in data_root.iterdir():
+            if subdir.is_dir() and list(subdir.glob("*_instance_mask.png")):
+                data_dirs.append(subdir)
 
-    print(f"Training data directory: {data_dir}")
-    instance_masks = list(data_dir.glob("*_instance_mask.png"))
-    print(f"Found {len(instance_masks)} instance masks")
-
-    if not instance_masks:
+    if not data_dirs:
         msg = (
-            f"No instance masks found in {data_dir}. "
+            "No directories with instance masks found. "
             "Make sure to generate data with --instance-mask flag and upload it."
         )
         raise ValueError(msg)
+
+    print(f"Training data directories ({len(data_dirs)}):")
+    total_masks = 0
+    for d in data_dirs:
+        mask_count = len(list(d.glob("*_instance_mask.png")))
+        total_masks += mask_count
+        print(f"  - {d.name}: {mask_count} instance masks")
+    print(f"Total: {total_masks} instance masks")
 
     # Setup config
     config = Mask2FormerTrainingConfig(
@@ -124,7 +139,7 @@ def train_remote(
     # Run training
     best_model_path = train(
         config=config,
-        data_dir=data_dir,
+        data_dirs=data_dirs,
         val_split=val_split,
     )
 

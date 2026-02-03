@@ -76,8 +76,18 @@ def compute_metrics(
             # Move to device
             pixel_values = batch["pixel_values"].to(device)
             pixel_mask = batch["pixel_mask"].to(device)
-            mask_labels = [m.to(device) for m in batch["mask_labels"]]
-            class_labels = [c.to(device) for c in batch["class_labels"]]
+
+            # Handle variable-length mask_labels and class_labels
+            # Filter out invalid labels (padded with -1)
+            batch_size = pixel_values.shape[0]
+            mask_labels = []
+            class_labels = []
+
+            for i in range(batch_size):
+                # Get valid masks (class_labels != -1)
+                valid = batch["class_labels"][i] != -1
+                mask_labels.append(batch["mask_labels"][i][valid].to(device))
+                class_labels.append(batch["class_labels"][i][valid].to(device))
 
             # Forward pass
             outputs = model(
@@ -179,7 +189,7 @@ def train_epoch(
 
 def train(
     config: Mask2FormerTrainingConfig,
-    data_dir: Path,
+    data_dirs: list[Path],
     val_split: float = 0.1,
     resume_from: Path | None = None,
 ) -> Path:
@@ -187,7 +197,7 @@ def train(
 
     Args:
         config: Training configuration.
-        data_dir: Directory containing training data.
+        data_dirs: List of directories containing training data.
         val_split: Fraction of data for validation.
         resume_from: Optional checkpoint to resume from.
 
@@ -204,9 +214,11 @@ def train(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Create dataloaders
-    print(f"Loading data from {data_dir}")
+    print(f"Loading data from {len(data_dirs)} directories:")
+    for d in data_dirs:
+        print(f"  - {d}")
     train_loader, val_loader = create_mask2former_dataloaders(
-        data_dir=data_dir,
+        data_dirs=data_dirs,
         batch_size=config.batch_size,
         val_split=val_split,
         image_size=512,
@@ -312,8 +324,9 @@ def main():
     parser.add_argument(
         "--data-dir",
         type=Path,
+        nargs="+",
         required=True,
-        help="Directory containing training data with instance masks",
+        help="Directory or directories containing training data with instance masks",
     )
     parser.add_argument(
         "--output-dir",
@@ -347,7 +360,7 @@ def main():
 
     train(
         config=config,
-        data_dir=args.data_dir,
+        data_dirs=args.data_dir,
         val_split=args.val_split,
         resume_from=args.resume,
     )

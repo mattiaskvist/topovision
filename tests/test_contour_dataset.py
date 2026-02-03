@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 import torch
 
-from training.dataset import ContourDataset, create_train_val_split
+from training.unet.dataset import ContourDataset, create_train_val_split
 
 
 @pytest.fixture

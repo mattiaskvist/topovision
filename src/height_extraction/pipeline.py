@@ -8,6 +8,7 @@ import numpy as np
 
 from contour.engine.contour_engine import ContourExtractionEngine
 from contour.engine.cv2_contour_engine import CV2ContourEngine
+from contour.engine.mask2former_engine import Mask2FormerContourEngine
 from contour.engine.unet_contour_engine import UNetContourEngine
 from OCR.engine.easyocr_engine import EasyOCREngine
 from OCR.engine.ocr_engine import OCREngine
@@ -77,12 +78,20 @@ class HeightExtractionPipeline:
 
         # 2. Contour Extraction
         # CV2ContourEngine expects a mask path because it cannot handle numeric values
-        # in the image
+        # in the image. Neural network engines (UNet, Mask2Former) use image directly.
         print("Extracting contours...")
         if isinstance(self.contour_engine, CV2ContourEngine):
             contours = self.contour_engine.extract_contours(mask_path)
-        else:
+        elif isinstance(
+            self.contour_engine, (UNetContourEngine, Mask2FormerContourEngine)
+        ):
             contours = self.contour_engine.extract_contours(image_path)
+        else:
+            # Default: try image first, fall back to mask
+            try:
+                contours = self.contour_engine.extract_contours(image_path)
+            except Exception:
+                contours = self.contour_engine.extract_contours(mask_path)
         print(f"Extracted {len(contours)} contours.")
 
         # 3. Matching

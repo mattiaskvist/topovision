@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from training.losses import DiceBCELoss
+from training.unet.losses import DiceBCELoss
 
 
 @pytest.fixture

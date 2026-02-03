@@ -7,7 +7,7 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-from .augmentations import (
+from training.common.augmentations import (
     get_training_augmentations,
     get_validation_augmentations,
 )

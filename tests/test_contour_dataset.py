@@ -247,7 +247,7 @@ def test_getitem_corrupted_image(temp_dataset_dir):
     # Create dataset with only the corrupted image
     dataset = ContourDataset(temp_dataset_dir, image_paths=[corrupted_path])
 
-    with pytest.raises(ValueError, match="Failed to load image"):
+    with pytest.raises(LookupError, match="Failed to load image"):
         _ = dataset[0]
 
 
@@ -264,7 +264,7 @@ def test_getitem_corrupted_mask(temp_dataset_dir):
         temp_dataset_dir, image_paths=[temp_dataset_dir / "valid_img.png"]
     )
 
-    with pytest.raises(ValueError, match="Failed to load mask"):
+    with pytest.raises(LookupError, match="Failed to load mask"):
         _ = dataset[0]
 
 

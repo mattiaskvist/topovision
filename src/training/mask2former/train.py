@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -134,7 +135,7 @@ def train_epoch(
     total_loss = 0.0
     num_batches = 0
 
-    progress = tqdm(dataloader, desc=f"Epoch {epoch}")
+    progress = tqdm(dataloader, desc=f"Epoch {epoch}", file=sys.stdout, mininterval=1.0)
 
     for step, batch in enumerate(progress):
         # Move to device
@@ -206,7 +207,7 @@ def train(
     """
     # Setup device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device}")
+    print(f"Using device: {device}", flush=True)
 
     # Create output directory
     run_name = f"mask2former_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -214,9 +215,9 @@ def train(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Create dataloaders
-    print(f"Loading data from {len(data_dirs)} directories:")
+    print(f"Loading data from {len(data_dirs)} directories:", flush=True)
     for d in data_dirs:
-        print(f"  - {d}")
+        print(f"  - {d}", flush=True)
     train_loader, val_loader = create_mask2former_dataloaders(
         data_dirs=data_dirs,
         batch_size=config.batch_size,
@@ -224,11 +225,11 @@ def train(
         image_size=512,
         num_workers=4,
     )
-    print(f"Train samples: {len(train_loader.dataset)}")
-    print(f"Val samples: {len(val_loader.dataset)}")
+    print(f"Train samples: {len(train_loader.dataset)}", flush=True)
+    print(f"Val samples: {len(val_loader.dataset)}", flush=True)
 
     # Create model
-    print("Creating Mask2Former model...")
+    print("Creating Mask2Former model...", flush=True)
     model = create_model(num_labels=1)  # Just contour_line
     model.to(device)
 
@@ -258,7 +259,7 @@ def train(
     writer = SummaryWriter(log_dir=output_dir / "tensorboard")
 
     # Training loop
-    print(f"Starting training for {config.num_epochs} epochs...")
+    print(f"Starting training for {config.num_epochs} epochs...", flush=True)
 
     for epoch in range(start_epoch, config.num_epochs):
         # Train
@@ -277,7 +278,10 @@ def train(
         val_metrics = compute_metrics(model, val_loader, device)
         val_loss = val_metrics["val_loss"]
 
-        print(f"Epoch {epoch}: train_loss={train_loss:.4f}, val_loss={val_loss:.4f}")
+        print(
+            f"Epoch {epoch}: train_loss={train_loss:.4f}, val_loss={val_loss:.4f}",
+            flush=True,
+        )
 
         # Log to TensorBoard
         writer.add_scalar("epoch/train_loss", train_loss, epoch)

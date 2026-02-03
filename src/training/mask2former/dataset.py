@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -10,6 +11,7 @@ import cv2
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset, random_split
+from tqdm import tqdm
 
 if TYPE_CHECKING:
     pass
@@ -58,12 +60,21 @@ class Mask2FormerDataset(Dataset):
 
         # Find all label files from all directories
         self.label_files = []
+        print(
+            f"Scanning {len(self.data_dirs)} directories for label files...", flush=True
+        )
         for data_dir in self.data_dirs:
-            self.label_files.extend(sorted(data_dir.glob("*_labels.json")))
+            found = sorted(data_dir.glob("*_labels.json"))
+            print(f"  {data_dir.name}: found {len(found)} label files", flush=True)
+            self.label_files.extend(found)
+        print(f"Total label files: {len(self.label_files)}", flush=True)
 
         # Filter to only include tiles with instance masks
+        print("Loading sample metadata...", flush=True)
         self.samples: list[dict] = []
-        for label_file in self.label_files:
+        for label_file in tqdm(
+            self.label_files, desc="Scanning labels", file=sys.stdout
+        ):
             with open(label_file) as f:
                 data = json.load(f)
 
@@ -84,6 +95,8 @@ class Mask2FormerDataset(Dataset):
                         "size": data["image"]["size"],
                     }
                 )
+
+        print(f"Found {len(self.samples)} samples with instance masks", flush=True)
 
     def __len__(self) -> int:
         """Return number of samples."""
@@ -237,12 +250,14 @@ def create_mask2former_dataloaders(
         Tuple of (train_dataloader, val_dataloader).
     """
     # Create full dataset
+    print("Creating Mask2FormerDataset...", flush=True)
     dataset = Mask2FormerDataset(data_dirs=data_dirs, image_size=image_size)
 
     # Calculate split sizes
     total = len(dataset)
     val_size = int(total * val_split)
     train_size = total - val_size
+    print(f"Splitting dataset: {train_size} train, {val_size} val", flush=True)
 
     # Split dataset
     generator = torch.Generator().manual_seed(seed)
@@ -267,6 +282,11 @@ def create_mask2former_dataloaders(
         num_workers=num_workers,
         collate_fn=collate_fn,
         pin_memory=True,
+    )
+
+    print(
+        f"DataLoaders created: {len(train_loader)} train batches, {len(val_loader)} val batches",  # noqa
+        flush=True,
     )
 
     return train_loader, val_loader

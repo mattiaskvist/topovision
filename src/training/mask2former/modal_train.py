@@ -58,7 +58,7 @@ training_image = (
         "numpy",
         "tqdm",
     )
-    .env({"PYTHONPATH": "/root"})
+    .env({"PYTHONPATH": "/root", "PYTHONUNBUFFERED": "1"})
     .add_local_dir(PROJECT_ROOT / "src", remote_path="/root/src")
 )
 

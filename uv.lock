@@ -1865,7 +1865,7 @@ wheels = [
 
 [[package]]
 name = "paddleocr"
-version = "3.3.3"
+version = "3.4.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "paddlex", extra = ["ocr-core"] },
@@ -1873,9 +1873,9 @@ dependencies = [
     { name = "requests" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/25/da/f04a3348834e5e824eabc805aab030d3ed8726c46657cbdc6967982be728/paddleocr-3.3.3.tar.gz", hash = "sha256:91e54ca54846384882ec9e0831e5f55d98776f2eefcc256dfa7b074afd587adb", size = 2502835, upload-time = "2026-01-20T07:27:42.394Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b2/78/15f43c2fd98d12320f9d771df27beaf49464fd151bf8dffd58ede0a4f019/paddleocr-3.4.0.tar.gz", hash = "sha256:8002a03ae88b5cd9366b7969897e6f76ae23a45a6314f4f6da35c081a979bb54", size = 2504177, upload-time = "2026-01-29T10:15:25.251Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/17/de/e5df590f89b039a1f7bfccf7a1c74b3abc47e5334a0f437febbff0a448da/paddleocr-3.3.3-py3-none-any.whl", hash = "sha256:172697bd4d97dd444de67b90bd3b2392f0398be58ddf5f21ed79778828f6ba80", size = 87064, upload-time = "2026-01-20T07:27:40.949Z" },
+    { url = "https://files.pythonhosted.org/packages/32/25/75a7aa8409d9a6ece6bd7ff9a896a25b75c5a78b2948d2119ab7a99db2f2/paddleocr-3.4.0-py3-none-any.whl", hash = "sha256:67b28a98c8ce58668473702fa22a6053d959df1105ec430a578280356b889ba1", size = 87786, upload-time = "2026-01-29T10:15:22.356Z" },
 ]
 
 [[package]]
@@ -1904,7 +1904,7 @@ wheels = [
 
 [[package]]
 name = "paddlex"
-version = "3.3.13"
+version = "3.4.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aistudio-sdk" },
@@ -1926,9 +1926,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "ujson" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a4/a9/dba9d37f7ab9f84337a33765cad751c8bea0d43cc8d31f338f85310e54f8/paddlex-3.3.13.tar.gz", hash = "sha256:42379eebab3be484e5fa2d7e13170dbb2c4ccac060ab181a7d06ea19b49851c3", size = 3888132, upload-time = "2026-01-12T11:23:28.795Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/22/bc/1cbf54cb3692311bf243ec24cc07998a574976479f6edbf3a61b33367480/paddlex-3.4.1.tar.gz", hash = "sha256:6746d07e12326e1cbba4fb170856867e25d07f2cfc85d36b7e617f0164eb3cab", size = 3994513, upload-time = "2026-01-30T06:51:40.933Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/7d/b3/8dc0c78be3b07deb496d9ab13e4f4aebeb172b62f838a45caaf986b50f2f/paddlex-3.3.13-py3-none-any.whl", hash = "sha256:e6745436cb304d76717288bcee8cfd0f6a94a7b055ae3249e4048d343be7683e", size = 1860380, upload-time = "2026-01-12T11:23:25.135Z" },
+    { url = "https://files.pythonhosted.org/packages/26/c4/44b2ebd14b58915ef3ae30409cb550ef16da30a0845a1ecab53c44978089/paddlex-3.4.1-py3-none-any.whl", hash = "sha256:901f64954a2d1d0484d5fb922fa74a3b088eb7611e245a9f1a756ea7ff104806", size = 2005787, upload-time = "2026-01-30T06:51:35.099Z" },
 ]
 
 [package.optional-dependencies]

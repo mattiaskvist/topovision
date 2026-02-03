@@ -95,14 +95,14 @@ class ContourDataset(Dataset):
         image = cv2.imread(str(img_path))
         if image is None:
             msg = f"Failed to load image: {img_path}"
-            raise ValueError(msg)
+            raise LookupError(msg)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
         # Load mask (grayscale)
         mask = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
         if mask is None:
             msg = f"Failed to load mask: {mask_path}"
-            raise ValueError(msg)
+            raise LookupError(msg)
 
         # Ensure mask is binary (0 or 1)
         mask = (mask > 127).astype(np.float32)

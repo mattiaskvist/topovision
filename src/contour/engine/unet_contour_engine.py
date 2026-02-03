@@ -116,23 +116,24 @@ class UNetContourEngine(ContourExtractionEngine):
             )
             raise ImportError(msg) from e
 
-        checkpoint = torch.load(self.model_path, map_location=self.device)
+        checkpoint = torch.load(
+            self.model_path, map_location=self.device, weights_only=True
+        )
 
         # Get model config from checkpoint
         config = checkpoint.get("config", {})
         encoder_name = config.get("encoder_name", "resnet34")
-        # Don't load pretrained weights for inference
-        encoder_weights = config.get("encoder_weights", None)
 
-        # Create model
+        # Create model without pretrained weights - we'll load our trained
+        # weights from the checkpoint, which would overwrite them anyway
         model = smp.Unet(
             encoder_name=encoder_name,
-            encoder_weights=encoder_weights,
+            encoder_weights=None,
             in_channels=3,
             classes=1,
         )
 
-        # Load weights
+        # Load trained weights from checkpoint
         model.load_state_dict(checkpoint["model_state_dict"])
         model = model.to(self.device)
 

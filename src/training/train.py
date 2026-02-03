@@ -143,6 +143,15 @@ def validate(
         total_dice += metrics["dice"]
         num_batches += 1
 
+    # Avoid division by zero
+    if num_batches == 0:
+        print("Warning: No batches in validation loader.")
+        return {
+            "loss": 0.0,
+            "iou": 0.0,
+            "dice": 0.0,
+        }
+
     return {
         "loss": total_loss / num_batches,
         "iou": total_iou / num_batches,

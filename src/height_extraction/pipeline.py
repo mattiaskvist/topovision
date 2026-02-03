@@ -76,7 +76,8 @@ class HeightExtractionPipeline:
             print(f"Dropped {drop_ratio:.0%} of detections. Keeping {len(detections)}.")
 
         # 2. Contour Extraction
-        # CV2ContourEngine expects mask path because it cant handle numbers
+        # CV2ContourEngine expects a mask path because it cannot handle numeric values
+        # in the image
         print("Extracting contours...")
         if isinstance(self.contour_engine, CV2ContourEngine):
             contours = self.contour_engine.extract_contours(mask_path)

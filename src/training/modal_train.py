@@ -128,8 +128,8 @@ def train_remote(
     volumes={"/data": data_volume},
     timeout=3600,  # 1 hour for upload
 )
-def upload_data(local_path: str = "data/training") -> int:
-    """Count files in the Modal data volume."""
+def count_data_files() -> int:
+    """Count files in the Modal data volume (no upload performed)."""
     import os
 
     file_count = 0
@@ -180,7 +180,7 @@ def upload_data_local(local_path: str = "data/training"):
     print(f"✓ Uploaded {len(png_files)} files to volume")
 
     # Verify upload
-    count = upload_data.remote(local_path)
+    count = count_data_files.remote()
     print(f"✓ Volume now contains {count} files")
 
 

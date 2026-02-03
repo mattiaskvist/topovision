@@ -67,7 +67,7 @@ training_image = (
     image=training_image,
     gpu="A10G",  # 24GB VRAM, sufficient for Mask2Former
     volumes={"/data": data_volume, "/models": models_volume},
-    timeout=21600,  # 6 hours
+    timeout=60 * 60 * 8,  # 8 hours
 )
 def train_remote(
     epochs: int = 50,
@@ -75,7 +75,7 @@ def train_remote(
     learning_rate: float = 1e-4,
     val_split: float = 0.1,
     gradient_accumulation: int = 1,
-    data_subdirs: list[str] | None = None,
+    data_subdirs: str = "",
 ) -> str:
     """Run Mask2Former training on Modal cloud GPU.
 
@@ -99,18 +99,27 @@ def train_remote(
     data_dirs: list[Path] = []
 
     if data_subdirs:
-        # Use specified subdirectories
-        for subdir in data_subdirs:
+        # Parse comma-separated list and find tile directories
+        subdir_list = [s.strip() for s in data_subdirs.split(",") if s.strip()]
+        for subdir in subdir_list:
             subdir_path = data_root / subdir
+            # Check if instance masks are directly in this dir
             if subdir_path.exists() and list(subdir_path.glob("*_instance_mask.png")):
                 data_dirs.append(subdir_path)
+            # Check nested subdirectory (e.g., N60E012/N60E012/)
+            elif subdir_path.exists():
+                for nested in subdir_path.iterdir():
+                    if nested.is_dir() and list(nested.glob("*_instance_mask.png")):
+                        data_dirs.append(nested)
             else:
-                print(f"Warning: No instance masks found in {subdir_path}")
+                print(f"Warning: Directory not found: {subdir_path}")
     else:
-        # Auto-discover all directories with instance masks
-        for subdir in data_root.iterdir():
-            if subdir.is_dir() and list(subdir.glob("*_instance_mask.png")):
-                data_dirs.append(subdir)
+        # Auto-discover all directories with instance masks (recursive)
+        # Use rglob to search all subdirectories
+        found_dirs = set()
+        for instance_mask in data_root.rglob("*_instance_mask.png"):
+            found_dirs.add(instance_mask.parent)
+        data_dirs = sorted(found_dirs)
 
     if not data_dirs:
         msg = (

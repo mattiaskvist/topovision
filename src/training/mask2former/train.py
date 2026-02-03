@@ -21,8 +21,8 @@ except ImportError as e:
     msg = "transformers not installed. Run: pip install transformers>=4.35.0"
     raise ImportError(msg) from e
 
-from training.mask2former.config import Mask2FormerTrainingConfig
-from training.mask2former.dataset import (
+from src.training.mask2former.config import Mask2FormerTrainingConfig
+from src.training.mask2former.dataset import (
     create_mask2former_dataloaders,
 )
 

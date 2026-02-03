@@ -107,6 +107,7 @@ def visualize_prediction(
 
 
 def main() -> None:
+    """Main function to parse arguments and run model evaluation."""
     parser = argparse.ArgumentParser(description="Test trained U-Net model")
     parser.add_argument(
         "--model",

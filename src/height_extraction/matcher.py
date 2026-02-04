@@ -1,8 +1,10 @@
 """Module for matching OCR results to contour lines."""
 
 import math
+from dataclasses import dataclass
 
 import numpy as np
+from scipy.optimize import linear_sum_assignment
 
 from OCR.engine.ocr_engine import DetectionResult
 
@@ -123,28 +125,67 @@ def parse_height_text(text: str) -> float | None:
         return None
 
 
-def match_text_to_contours(
+def calculate_angle_difference(angle1: float, angle2: float) -> float:
+    """Calculates the angular difference accounting for line alignment (modulo 180).
+
+    Since we care about alignment (not direction), angles differing by
+    180° are equivalent.
+
+    Args:
+        angle1: First angle in degrees.
+        angle2: Second angle in degrees.
+
+    Returns:
+        The angular difference in degrees, in range [0, 90].
+    """
+    diff = abs(angle1 - angle2) % 180
+    if diff > 90:
+        diff = 180 - diff
+    return diff
+
+
+@dataclass
+class MatchCandidate:
+    """Represents a potential match between a detection and a contour."""
+
+    detection_idx: int
+    contour_idx: int
+    distance: float
+    angle_diff: float
+    height: float
+    confidence: float
+
+    def cost(self, distance_weight: float = 1.0, angle_weight: float = 1.0) -> float:
+        """Calculate weighted cost for this match.
+
+        Lower confidence increases cost (we prefer high-confidence matches).
+        """
+        base_cost = distance_weight * self.distance + angle_weight * self.angle_diff
+        # Scale by inverse confidence: low confidence = higher cost
+        confidence_factor = 1.0 / max(self.confidence, 0.01)
+        return base_cost * confidence_factor
+
+
+def compute_match_candidates(
     detections: list[DetectionResult],
     contours: list[np.ndarray],
     max_distance: float = 50.0,
     max_angle_diff: float = 30.0,
-    angle_check_threshold: float = 90.0,
-) -> dict[int, float]:
-    """Matches OCR detections to the nearest contour lines with orientation check.
+) -> list[MatchCandidate]:
+    """Compute all valid match candidates between detections and contours.
 
     Args:
         detections: List of OCR detection results.
-        contours: List of contours (numpy arrays).
+        contours: List of contours (numpy arrays of shape (N, 1, 2)).
         max_distance: Maximum distance to consider a match valid.
-        max_angle_diff: Maximum angle difference (degrees) to consider a match valid.
-        angle_check_threshold: Threshold for angle difference check.
+        max_angle_diff: Maximum angle difference (degrees) to consider valid.
 
     Returns:
-        Dictionary mapping contour index to matched height value.
+        List of valid MatchCandidate objects.
     """
-    matches = {}  # contour_index -> height
+    candidates = []
 
-    for detection in detections:
+    for det_idx, detection in enumerate(detections):
         height_val = parse_height_text(detection.text)
         if height_val is None:
             continue
@@ -152,31 +193,131 @@ def match_text_to_contours(
         centroid = calculate_centroid(detection.polygon.points)
 
         # Calculate text orientation from top edge (p0 -> p1)
-        # Polygon points are usually [top-left, top-right, bottom-right, bottom-left]
         p0 = detection.polygon.points[0]
         p1 = detection.polygon.points[1]
         text_angle = calculate_angle(p0, p1)
 
-        best_contour_idx = -1
-        min_dist = float("inf")
-
-        for idx, contour in enumerate(contours):
+        for cont_idx, contour in enumerate(contours):
             dist, contour_angle = min_distance_to_contour(centroid, contour)
+            angle_diff = calculate_angle_difference(text_angle, contour_angle)
 
-            # Check angle difference
-            # We care about alignment, so modulo 180
-            diff = abs(text_angle - contour_angle) % 180
-            if diff > angle_check_threshold:
-                diff = 180 - diff
+            if dist <= max_distance and angle_diff <= max_angle_diff:
+                candidates.append(
+                    MatchCandidate(
+                        detection_idx=det_idx,
+                        contour_idx=cont_idx,
+                        distance=dist,
+                        angle_diff=angle_diff,
+                        height=height_val,
+                        confidence=detection.confidence,
+                    )
+                )
 
-            if dist < min_dist and diff <= max_angle_diff:
-                min_dist = dist
-                best_contour_idx = idx
+    return candidates
 
-        if best_contour_idx != -1 and min_dist <= max_distance:
-            # If multiple texts match the same contour, we could average them or
-            # take the closest.
-            # For now, let's just overwrite (or maybe check consistency later).
-            matches[best_contour_idx] = height_val
+
+def build_cost_matrix(
+    candidates: list[MatchCandidate],
+    n_detections: int,
+    n_contours: int,
+    distance_weight: float = 1.0,
+    angle_weight: float = 1.0,
+) -> np.ndarray:
+    """Build cost matrix for Hungarian algorithm.
+
+    Args:
+        candidates: List of valid match candidates.
+        n_detections: Total number of detections.
+        n_contours: Total number of contours.
+        distance_weight: Weight for distance in cost calculation.
+        angle_weight: Weight for angle difference in cost calculation.
+
+    Returns:
+        Cost matrix of shape (n_detections, n_contours) with large value
+        for invalid pairs.
+    """
+    # Use a large finite value instead of inf to avoid scipy's "infeasible" error
+    # when an entire row/column has no valid candidates.
+    invalid_cost = 1e9
+    cost_matrix = np.full((n_detections, n_contours), invalid_cost)
+
+    for candidate in candidates:
+        cost = candidate.cost(distance_weight, angle_weight)
+        # Keep the minimum cost if multiple candidates exist for same pair
+        if cost < cost_matrix[candidate.detection_idx, candidate.contour_idx]:
+            cost_matrix[candidate.detection_idx, candidate.contour_idx] = cost
+
+    return cost_matrix
+
+
+def match_text_to_contours(
+    detections: list[DetectionResult],
+    contours: list[np.ndarray],
+    max_distance: float = 50.0,
+    max_angle_diff: float = 30.0,
+    distance_weight: float = 1.0,
+    angle_weight: float = 1.0,
+) -> dict[int, float]:
+    """Match OCR detections to contours using Hungarian algorithm.
+
+    Uses scipy's linear_sum_assignment to find the globally optimal one-to-one
+    matching that minimizes total cost. Cost is based on distance and angle
+    difference, weighted by detection confidence.
+
+    When multiple detections could match the same contour, the one with lowest
+    cost (considering confidence) is selected.
+
+    Args:
+        detections: List of OCR detection results.
+        contours: List of contours (numpy arrays of shape (N, 1, 2)).
+        max_distance: Maximum distance to consider a match valid.
+        max_angle_diff: Maximum angle difference (degrees) to consider valid.
+        distance_weight: Weight for distance in cost calculation.
+        angle_weight: Weight for angle difference in cost calculation.
+
+    Returns:
+        Dictionary mapping contour index to matched height value.
+    """
+    if not detections or not contours:
+        return {}
+
+    # Get all valid match candidates
+    candidates = compute_match_candidates(
+        detections, contours, max_distance, max_angle_diff
+    )
+
+    if not candidates:
+        return {}
+
+    # Build candidate lookup for height values
+    candidate_lookup: dict[tuple[int, int], MatchCandidate] = {}
+    for c in candidates:
+        key = (c.detection_idx, c.contour_idx)
+        # Keep the candidate with highest confidence for each pair
+        if (
+            key not in candidate_lookup
+            or c.confidence > candidate_lookup[key].confidence
+        ):
+            candidate_lookup[key] = c
+
+    # Build cost matrix
+    n_detections = len(detections)
+    n_contours = len(contours)
+    cost_matrix = build_cost_matrix(
+        candidates, n_detections, n_contours, distance_weight, angle_weight
+    )
+
+    # Run Hungarian algorithm
+    row_indices, col_indices = linear_sum_assignment(cost_matrix)
+
+    # Extract valid matches (filter out high-cost/invalid assignments)
+    # Use the same threshold as build_cost_matrix for invalid pairs
+    invalid_cost_threshold = 1e8  # Slightly lower than 1e9
+    matches: dict[int, float] = {}
+    for det_idx, cont_idx in zip(row_indices, col_indices, strict=False):
+        if cost_matrix[det_idx, cont_idx] < invalid_cost_threshold:
+            key = (det_idx, cont_idx)
+            if key in candidate_lookup:
+                matches[cont_idx] = candidate_lookup[key].height
 
     return matches

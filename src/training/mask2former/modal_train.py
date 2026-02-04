@@ -204,6 +204,38 @@ def upload_data(local_path: str, remote_subdir: str = ""):
     print(f"Instance masks: {len(instance_masks)}")
 
 
+@app.function(
+    image=training_image,
+    volumes={"/models": models_volume},
+    timeout=600,
+)
+def get_run_files(run_name: str) -> dict[str, bytes]:
+    """Get all files from a training run (runs remotely).
+
+    Args:
+        run_name: Name of the run directory.
+
+    Returns:
+        Dictionary mapping filename to file contents.
+    """
+    run_path = Path("/models/mask2former") / run_name
+    if not run_path.exists():
+        available = list(Path("/models/mask2former").glob("*"))
+        raise ValueError(
+            f"Run not found: {run_name}. Available: {[r.name for r in available]}"
+        )
+
+    files = {}
+
+    # Get all files recursively
+    for file_path in run_path.rglob("*"):
+        if file_path.is_file():
+            rel_path = file_path.relative_to(run_path)
+            files[str(rel_path)] = file_path.read_bytes()
+
+    return files
+
+
 @app.local_entrypoint()
 def download_results(run_name: str, local_dir: str = "models/mask2former"):
     """Download trained models from Modal volume.
@@ -215,24 +247,35 @@ def download_results(run_name: str, local_dir: str = "models/mask2former"):
     output_path = Path(local_dir) / run_name
     output_path.mkdir(parents=True, exist_ok=True)
 
-    print(f"Downloading {run_name} to {output_path}")
+    print(f"Downloading {run_name} to {output_path}...")
 
-    # Download from volume
-    remote_path = f"/models/mask2former/{run_name}"
+    try:
+        files = get_run_files.remote(run_name)
+    except ValueError as e:
+        print(f"Error: {e}")
+        return
 
-    for file_entry in models_volume.listdir(remote_path):
-        remote_file = f"{remote_path}/{file_entry.path}"
-        local_file = output_path / file_entry.path
+    for filename, content in files.items():
+        file_path = output_path / filename
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        file_path.write_bytes(content)
+        size_mb = len(content) / (1024 * 1024)
+        print(f"  Downloaded: {filename} ({size_mb:.2f} MB)")
 
-        if file_entry.is_dir():
-            local_file.mkdir(parents=True, exist_ok=True)
-        else:
-            # Read from volume and write locally
-            with open(local_file, "wb") as f:
-                for chunk in models_volume.read_file(remote_file):
-                    f.write(chunk)
+    print(f"\n✓ Downloaded {len(files)} files to {output_path}")
 
-    print(f"Download complete: {output_path}")
+
+@app.function(
+    image=training_image,
+    volumes={"/models": models_volume},
+    timeout=60,
+)
+def get_available_runs() -> list[str]:
+    """List available training runs (runs remotely)."""
+    models_path = Path("/models/mask2former")
+    if not models_path.exists():
+        return []
+    return [d.name for d in sorted(models_path.iterdir()) if d.is_dir()]
 
 
 @app.local_entrypoint()
@@ -242,12 +285,33 @@ def list_runs():
     print("-" * 40)
 
     try:
-        for entry in models_volume.listdir("/models/mask2former"):
-            if entry.is_dir():
-                print(f"  {entry.path}")
+        runs = get_available_runs.remote()
+        if not runs:
+            print("  No runs found.")
+        else:
+            for run in runs:
+                print(f"  {run}")
     except Exception as e:
         print(f"Error listing runs: {e}")
-        print("Volume may be empty or path doesn't exist.")
+
+
+@app.function(
+    image=training_image,
+    volumes={"/data": data_volume},
+    timeout=60,
+)
+def get_available_data() -> list[tuple[str, int]]:
+    """List available training data (runs remotely)."""
+    data_path = Path("/data")
+    if not data_path.exists():
+        return []
+
+    results = []
+    for entry in sorted(data_path.iterdir()):
+        if entry.is_dir():
+            instance_masks = list(entry.rglob("*_instance_mask.png"))
+            results.append((entry.name, len(instance_masks)))
+    return results
 
 
 @app.local_entrypoint()
@@ -257,17 +321,11 @@ def list_data():
     print("-" * 40)
 
     try:
-        for entry in data_volume.listdir("/data"):
-            if entry.is_dir():
-                # Count instance masks in this directory
-                try:
-                    files = list(data_volume.listdir(f"/data/{entry.path}"))
-                    instance_masks = sum(
-                        1 for f in files if "_instance_mask.png" in str(f.path)
-                    )
-                    print(f"  {entry.path} ({instance_masks} instance masks)")
-                except Exception:
-                    print(f"  {entry.path}")
+        data = get_available_data.remote()
+        if not data:
+            print("  No data found.")
+        else:
+            for name, count in data:
+                print(f"  {name} ({count} instance masks)")
     except Exception as e:
         print(f"Error listing data: {e}")
-        print("Volume may be empty.")

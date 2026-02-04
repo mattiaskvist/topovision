@@ -7,6 +7,7 @@ import argparse
 import cv2
 import numpy as np
 import torch
+from skimage.morphology import skeletonize
 from transformers import Mask2FormerForUniversalSegmentation, Mask2FormerImageProcessor
 
 
@@ -106,6 +107,158 @@ def predict(
         "scores": scores,
         "labels": labels,
     }
+
+
+def extract_skeletons(masks: list[np.ndarray]) -> list[np.ndarray]:
+    """Extract single-pixel wide skeletons from instance masks.
+
+    Uses morphological skeletonization to reduce each contour mask
+    to its medial axis (spine).
+
+    Args:
+        masks: List of binary masks (H, W) from predict().
+
+    Returns:
+        List of skeleton masks (H, W), each with single-pixel wide lines.
+    """
+    skeletons = []
+    for mask in masks:
+        # Skeletonize expects binary image
+        skeleton = skeletonize(mask.astype(bool))
+        skeletons.append(skeleton.astype(np.uint8))
+    return skeletons
+
+
+def _order_points_nearest_neighbor(points: np.ndarray) -> np.ndarray:
+    """Order points along a line using nearest neighbor traversal.
+
+    Args:
+        points: Unordered points as (N, 2) array of (x, y).
+
+    Returns:
+        Ordered points as (N, 2) array.
+    """
+    if len(points) <= 2:
+        return points
+
+    # Start from point with minimum x (or y if tied)
+    start_idx = np.lexsort((points[:, 1], points[:, 0]))[0]
+
+    ordered = [points[start_idx]]
+    remaining = set(range(len(points)))
+    remaining.remove(start_idx)
+
+    current = points[start_idx]
+
+    while remaining:
+        # Find nearest unvisited point
+        remaining_points = points[list(remaining)]
+        distances = np.sum((remaining_points - current) ** 2, axis=1)
+        nearest_local_idx = np.argmin(distances)
+        nearest_global_idx = list(remaining)[nearest_local_idx]
+
+        ordered.append(points[nearest_global_idx])
+        remaining.remove(nearest_global_idx)
+        current = points[nearest_global_idx]
+
+    return np.array(ordered)
+
+
+def masks_to_polylines(
+    skeletons: list[np.ndarray],
+    min_length: int = 10,
+) -> list[np.ndarray]:
+    """Convert skeleton masks to ordered polyline coordinates.
+
+    Args:
+        skeletons: List of skeleton masks from extract_skeletons().
+        min_length: Minimum number of points to keep a polyline.
+
+    Returns:
+        List of polylines, each as array of (x, y) coordinates.
+    """
+    polylines = []
+
+    for skeleton in skeletons:
+        # Find all skeleton points
+        points = np.column_stack(np.where(skeleton > 0))  # (y, x) format
+
+        if len(points) < min_length:
+            continue
+
+        # Convert to (x, y) format
+        points = points[:, ::-1]  # Swap to (x, y)
+
+        # Order points along the line using nearest neighbor
+        ordered = _order_points_nearest_neighbor(points)
+        polylines.append(ordered)
+
+    return polylines
+
+
+def predict_with_skeletons(
+    model: Mask2FormerForUniversalSegmentation,
+    processor: Mask2FormerImageProcessor,
+    image: np.ndarray,
+    device: torch.device,
+    threshold: float = 0.5,
+) -> dict:
+    """Run inference and extract skeletons in one call.
+
+    Args:
+        model: Loaded Mask2Former model.
+        processor: Image processor.
+        image: RGB image as numpy array (H, W, 3).
+        device: Device to use.
+        threshold: Confidence threshold.
+
+    Returns:
+        Dictionary with masks, skeletons, polylines, scores, labels.
+    """
+    predictions = predict(model, processor, image, device, threshold)
+
+    skeletons = extract_skeletons(predictions["masks"])
+    polylines = masks_to_polylines(skeletons)
+
+    predictions["skeletons"] = skeletons
+    predictions["polylines"] = polylines
+
+    return predictions
+
+
+def visualize_skeletons(
+    image: np.ndarray,
+    predictions: dict,
+    line_thickness: int = 1,
+) -> np.ndarray:
+    """Visualize skeleton lines overlaid on image.
+
+    Args:
+        image: Original RGB image.
+        predictions: Output from predict_with_skeletons().
+        line_thickness: Thickness of skeleton lines.
+
+    Returns:
+        Visualization image (RGB).
+    """
+    vis = image.copy()
+
+    # Generate random colors for each instance
+    np.random.seed(42)
+    colors = np.random.randint(0, 255, size=(len(predictions.get("skeletons", [])), 3))
+
+    for i, skeleton in enumerate(predictions.get("skeletons", [])):
+        color = colors[i].tolist()
+        # Draw skeleton pixels
+        vis[skeleton > 0] = color
+
+        # Optionally thicken the line
+        if line_thickness > 1:
+            kernel = np.ones((line_thickness, line_thickness), np.uint8)
+            dilated = cv2.dilate(skeleton, kernel, iterations=1)
+            vis[dilated > 0] = color
+
+    return vis
 
 
 def visualize_predictions(

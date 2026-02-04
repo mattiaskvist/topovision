@@ -17,6 +17,12 @@ class ContourExtractionEngine(ABC):
 
     def extract_contours(self, mask_path: str, epsilon: float = 2.0) -> list[ContourLine]:
         """Extracts contours from a binary mask file.
+        
+        Approach:
+        1. Skeletonize to get 1-pixel wide lines
+        2. Trace paths from endpoints
+        3. Merge paths whose endpoints fall within a small radius
+        4. Simplify using Douglas-Peucker algorithm
 
         Args:
             mask_path: Path to the binary mask image.

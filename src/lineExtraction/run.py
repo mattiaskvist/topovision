@@ -1,9 +1,10 @@
-"""Extract lines from binary images as ordered polylines.
+"""Extract contour lines from binary images as ordered polylines.
 
 Approach:
 1. Skeletonize to get 1-pixel wide lines
 2. Trace paths from endpoints
 3. Merge paths whose endpoints fall within a small radius
+4. Simplify using Douglas-Peucker algorithm
 """
 
 from pathlib import Path
@@ -16,18 +17,7 @@ from skimage.morphology import skeletonize
 from src.height_extraction.schemas import ContourLine
 
 
-PATH = Path("./data/umask")
-
-
-def load_binary_image(image_path: str | Path) -> np.ndarray:
-    """Load a binary image as 0s and 1s."""
-    img = cv2.imread(str(image_path), cv2.IMREAD_GRAYSCALE)
-    if img is None:
-        raise FileNotFoundError(f"Could not load image: {image_path}")
-    return (img > 127).astype(np.uint8)
-
-
-def get_neighbors(point: tuple[int, int], skeleton: np.ndarray) -> list[tuple[int, int]]:
+def _get_neighbors(point: tuple[int, int], skeleton: np.ndarray) -> list[tuple[int, int]]:
     """Get 8-connected skeleton neighbors of a point."""
     row, col = point
     neighbors = []
@@ -42,7 +32,7 @@ def get_neighbors(point: tuple[int, int], skeleton: np.ndarray) -> list[tuple[in
     return neighbors
 
 
-def trace_path(
+def _trace_path(
     start: tuple[int, int],
     skeleton: np.ndarray,
     visited: set[tuple[int, int]],
@@ -53,7 +43,7 @@ def trace_path(
     current = start
 
     while True:
-        neighbors = get_neighbors(current, skeleton)
+        neighbors = _get_neighbors(current, skeleton)
         unvisited = [n for n in neighbors if n not in visited]
         if not unvisited:
             break
@@ -64,22 +54,19 @@ def trace_path(
     return path
 
 
-def extract_paths(skeleton: np.ndarray) -> list[list[tuple[int, int]]]:
-    """Extract all paths from a skeleton."""
+def _extract_paths(skeleton: np.ndarray) -> list[list[tuple[int, int]]]:
+    """Extract all paths from a skeleton image."""
     skeleton_points = set(zip(*np.where(skeleton)))
     if not skeleton_points:
         return []
 
-    # Find endpoints (points with exactly 1 neighbor)
-    endpoints = [p for p in skeleton_points if len(get_neighbors(p, skeleton)) == 1]
-
+    endpoints = [p for p in skeleton_points if len(_get_neighbors(p, skeleton)) == 1]
     paths = []
-    visited = set()
+    visited: set[tuple[int, int]] = set()
 
-    # Start from endpoints
     for ep in endpoints:
         if ep not in visited:
-            path = trace_path(ep, skeleton, visited)
+            path = _trace_path(ep, skeleton, visited)
             if len(path) >= 2:
                 paths.append(path)
 
@@ -87,7 +74,7 @@ def extract_paths(skeleton: np.ndarray) -> list[list[tuple[int, int]]]:
     remaining = skeleton_points - visited
     while remaining:
         start = remaining.pop()
-        path = trace_path(start, skeleton, visited)
+        path = _trace_path(start, skeleton, visited)
         if len(path) >= 2:
             paths.append(path)
         remaining = skeleton_points - visited
@@ -95,12 +82,12 @@ def extract_paths(skeleton: np.ndarray) -> list[list[tuple[int, int]]]:
     return paths
 
 
-def distance(p1: tuple[int, int], p2: tuple[int, int]) -> float:
+def _distance(p1: tuple[int, int], p2: tuple[int, int]) -> float:
     """Euclidean distance between two points."""
     return np.sqrt((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2)
 
 
-def merge_paths(
+def _merge_paths(
     paths: list[list[tuple[int, int]]],
     radius: float,
 ) -> list[list[tuple[int, int]]]:
@@ -124,22 +111,19 @@ def merge_paths(
                 if len(pi) < 2 or len(pj) < 2:
                     continue
 
-                # Check all endpoint pairs
-                endpoints = [
-                    (pi[0], pj[0], True, True),    # start-start
-                    (pi[0], pj[-1], True, False),  # start-end
-                    (pi[-1], pj[0], False, True),  # end-start
-                    (pi[-1], pj[-1], False, False),  # end-end
+                endpoint_pairs = [
+                    (pi[0], pj[0], True, True),
+                    (pi[0], pj[-1], True, False),
+                    (pi[-1], pj[0], False, True),
+                    (pi[-1], pj[-1], False, False),
                 ]
 
-                for p1, p2, i_start, j_start in endpoints:
-                    if distance(p1, p2) <= radius:
-                        # Merge: orient paths so they connect properly
+                for p1, p2, i_start, j_start in endpoint_pairs:
+                    if _distance(p1, p2) <= radius:
                         if i_start:
                             pi = pi[::-1]
                         if not j_start:
                             pj = pj[::-1]
-                        
                         paths[i] = pi + pj
                         paths.pop(j)
                         merged = True
@@ -148,7 +132,7 @@ def merge_paths(
     return paths
 
 
-def simplify_path(points: list[tuple[int, int]], epsilon: float) -> list[tuple[int, int]]:
+def _simplify_path(points: list[tuple[int, int]], epsilon: float) -> list[tuple[int, int]]:
     """Simplify path using Douglas-Peucker algorithm."""
     if len(points) < 3:
         return points
@@ -157,7 +141,7 @@ def simplify_path(points: list[tuple[int, int]], epsilon: float) -> list[tuple[i
     return [(int(p[0][1]), int(p[0][0])) for p in simplified]
 
 
-def estimate_line_thickness(binary: np.ndarray) -> float:
+def _estimate_line_thickness(binary: np.ndarray) -> float:
     """Estimate average line thickness using distance transform."""
     if binary.sum() == 0:
         return 1.0
@@ -169,93 +153,101 @@ def estimate_line_thickness(binary: np.ndarray) -> float:
     return float(np.median(vals) * 2)
 
 
-def extract_lines(
-    image_path: str | Path,
+def extract_contours(
+    binary_image: np.ndarray,
     simplify: bool = True,
     epsilon: float = 2.0,
 ) -> list[ContourLine]:
-    """Extract lines from a binary image.
-    
+    """Extract contour lines from a binary image.
+
     Args:
-        image_path: Path to binary image (black background, white lines).
+        binary_image: Binary image array (0s and 1s, or 0s and 255s).
         simplify: Apply Douglas-Peucker simplification.
         epsilon: Simplification tolerance.
-    
+
     Returns:
         List of ContourLine objects with (x, y) point sequences.
     """
-    binary = load_binary_image(image_path)
-    
-    # Merge radius based on line thickness
-    thickness = estimate_line_thickness(binary)
+    binary = (binary_image > 0).astype(np.uint8)
+
+    thickness = _estimate_line_thickness(binary)
     radius = max(thickness * 2, 10.0)
-    
+
     skeleton = skeletonize(binary).astype(np.uint8)
-    paths = extract_paths(skeleton)
-    paths = merge_paths(paths, radius)
-    
+    paths = _extract_paths(skeleton)
+    paths = _merge_paths(paths, radius)
+
     if simplify:
-        paths = [simplify_path(p, epsilon) for p in paths]
-    
-    # Convert to ContourLine objects with (x, y) coordinates
-    contour_lines = [
+        paths = [_simplify_path(p, epsilon) for p in paths]
+
+    return [
         ContourLine(
             id=i,
-            points=[(col, row) for row, col in path],  # Convert (row, col) to (x, y)
+            points=[(col, row) for row, col in path],
             height=None,
             source="unknown",
         )
         for i, path in enumerate(paths)
     ]
-    
-    return contour_lines
 
 
-def visualize(
-    original: np.ndarray,
-    skeleton: np.ndarray,
-    contour_lines: list[ContourLine],
-    output_path: str | Path | None = None,
-) -> None:
-    """Show extraction results."""
-    import matplotlib.pyplot as plt
+def extract_contours_from_file(
+    image_path: str | Path,
+    simplify: bool = True,
+    epsilon: float = 2.0,
+) -> list[ContourLine]:
+    """Extract contour lines from a binary image file.
 
-    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+    Args:
+        image_path: Path to binary image (black background, white lines).
+        simplify: Apply Douglas-Peucker simplification.
+        epsilon: Simplification tolerance.
 
-    axes[0].imshow(original, cmap="gray")
-    axes[0].set_title("Original")
-    axes[0].axis("off")
-
-    axes[1].imshow(skeleton, cmap="gray")
-    axes[1].set_title("Skeleton")
-    axes[1].axis("off")
-
-    axes[2].imshow(np.zeros_like(original), cmap="gray")
-    colors = plt.cm.tab10(np.linspace(0, 1, max(len(contour_lines), 1)))
-    for i, contour in enumerate(contour_lines):
-        if contour.points:
-            xs, ys = zip(*contour.points)  # points are (x, y)
-            axes[2].plot(xs, ys, color=colors[i % len(colors)], linewidth=1)
-    axes[2].set_title(f"Lines ({len(contour_lines)})")
-    axes[2].axis("off")
-
-    plt.tight_layout()
-    if output_path:
-        plt.savefig(output_path, dpi=150, bbox_inches="tight")
-    else:
-        plt.show()
-    plt.close()
+    Returns:
+        List of ContourLine objects with (x, y) point sequences.
+    """
+    img = cv2.imread(str(image_path), cv2.IMREAD_GRAYSCALE)
+    if img is None:
+        raise FileNotFoundError(f"Could not load image: {image_path}")
+    return extract_contours((img > 127).astype(np.uint8), simplify, epsilon)
 
 
 if __name__ == "__main__":
+    import matplotlib.pyplot as plt
+
+    PATH = Path("./data/umask")
+
     for mask_file in sorted(PATH.glob("*_mask.png")):
         print(f"\n{mask_file.name}")
-        
-        contour_lines = extract_lines(mask_file)
-        total_points = sum(len(c.points) for c in contour_lines)
-        print(f"  {len(contour_lines)} lines, {total_points} points")
-        
-        binary = load_binary_image(mask_file)
-        skeleton = skeletonize(binary).astype(np.uint8)
-        visualize(binary, skeleton, contour_lines)
 
+        # Load image and extract contours
+        img = cv2.imread(str(mask_file), cv2.IMREAD_GRAYSCALE)
+        binary = (img > 127).astype(np.uint8)
+        contours = extract_contours(binary)
+        total_points = sum(len(c.points) for c in contours)
+        print(f"  {len(contours)} lines, {total_points} points")
+
+        # Visualize
+        skeleton = skeletonize(binary).astype(np.uint8)
+        fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+
+        axes[0].imshow(binary, cmap="gray")
+        axes[0].set_title("Original")
+        axes[0].axis("off")
+
+        axes[1].imshow(skeleton, cmap="gray")
+        axes[1].set_title("Skeleton")
+        axes[1].axis("off")
+
+        axes[2].imshow(np.zeros_like(binary), cmap="gray")
+        colors = plt.cm.tab10(np.linspace(0, 1, max(len(contours), 1)))
+        for i, contour in enumerate(contours):
+            if contour.points:
+                xs, ys = zip(*contour.points)
+                axes[2].plot(xs, ys, color=colors[i % len(colors)], linewidth=1)
+        axes[2].set_title(f"Lines ({len(contours)})")
+        axes[2].axis("off")
+
+        plt.tight_layout()
+        plt.show()
+        plt.close()

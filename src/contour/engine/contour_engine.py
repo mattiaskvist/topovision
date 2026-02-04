@@ -1,13 +1,14 @@
 """Abstract base class for contour extraction engines."""
 
-from abc import ABC, abstractmethod
-
-import numpy as np
-from src.height_extraction.schemas import ContourLine
+from abc import ABC
 
 import cv2
+import numpy as np
 from scipy import ndimage
 from skimage.morphology import skeletonize
+
+from src.height_extraction.schemas import ContourLine
+
 
 class ContourExtractionEngine(ABC):
     """Abstract base class for contour extraction engines.
@@ -15,7 +16,9 @@ class ContourExtractionEngine(ABC):
     This class defines the interface for extracting contours from binary masks.
     """
 
-    def extract_contours(self, mask_path: str, epsilon: float = 2.0) -> list[ContourLine]:
+    def extract_contours(
+        self, mask_path: str, epsilon: float = 2.0
+    ) -> list[ContourLine]:
         """Extracts contours from a binary mask file.
 
         Args:
@@ -70,10 +73,12 @@ class ContourExtractionEngine(ABC):
         ]
 
 
-
 # ===== Get Line Helpers =====
 
-def _get_neighbors(point: tuple[int, int], skeleton: np.ndarray) -> list[tuple[int, int]]:
+
+def _get_neighbors(
+    point: tuple[int, int], skeleton: np.ndarray
+) -> list[tuple[int, int]]:
     """Get 8-connected skeleton neighbors of a point."""
     row, col = point
     neighbors = []
@@ -112,7 +117,7 @@ def _trace_path(
 
 def _extract_paths(skeleton: np.ndarray) -> list[list[tuple[int, int]]]:
     """Extract all paths from a skeleton image."""
-    skeleton_points = set(zip(*np.where(skeleton)))
+    skeleton_points = set(zip(*np.where(skeleton), strict=False))
     if not skeleton_points:
         return []
 
@@ -188,7 +193,9 @@ def _merge_paths(
     return paths
 
 
-def _simplify_path(points: list[tuple[int, int]], epsilon: float) -> list[tuple[int, int]]:
+def _simplify_path(
+    points: list[tuple[int, int]], epsilon: float
+) -> list[tuple[int, int]]:
     """Simplify path using Douglas-Peucker algorithm."""
     if len(points) < 3:
         return points

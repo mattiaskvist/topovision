@@ -289,16 +289,8 @@ def match_text_to_contours(
     if not candidates:
         return {}
 
-    # Build candidate lookup for height values
-    candidate_lookup: dict[tuple[int, int], MatchCandidate] = {}
-    for c in candidates:
-        key = (c.detection_idx, c.contour_idx)
-        # Keep the candidate with highest confidence for each pair
-        if (
-            key not in candidate_lookup
-            or c.confidence > candidate_lookup[key].confidence
-        ):
-            candidate_lookup[key] = c
+    # Build lookup for height values by (detection_idx, contour_idx) pair
+    candidate_lookup = {(c.detection_idx, c.contour_idx): c.height for c in candidates}
 
     # Build cost matrix
     n_detections = len(detections)
@@ -318,6 +310,6 @@ def match_text_to_contours(
         if cost_matrix[det_idx, cont_idx] < invalid_cost_threshold:
             key = (det_idx, cont_idx)
             if key in candidate_lookup:
-                matches[cont_idx] = candidate_lookup[key].height
+                matches[cont_idx] = candidate_lookup[key]
 
     return matches

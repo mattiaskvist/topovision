@@ -8,6 +8,7 @@ import numpy as np
 
 from contour.engine.contour_engine import ContourExtractionEngine
 from contour.engine.cv2_contour_engine import CV2ContourEngine
+from contour.engine.mask2former_engine import Mask2FormerContourEngine
 from contour.engine.unet_contour_engine import UNetContourEngine
 from OCR.engine.easyocr_engine import EasyOCREngine
 from OCR.engine.ocr_engine import OCREngine
@@ -77,12 +78,20 @@ class HeightExtractionPipeline:
 
         # 2. Contour Extraction
         # CV2ContourEngine expects a mask path because it cannot handle numeric values
-        # in the image
+        # in the image. Neural network engines (UNet, Mask2Former) use image directly.
         print("Extracting contours...")
         if isinstance(self.contour_engine, CV2ContourEngine):
             contours = self.contour_engine.extract_contours(mask_path)
-        else:
+        elif isinstance(
+            self.contour_engine, (UNetContourEngine, Mask2FormerContourEngine)
+        ):
             contours = self.contour_engine.extract_contours(image_path)
+        else:
+            # Default: try image first, fall back to mask
+            try:
+                contours = self.contour_engine.extract_contours(image_path)
+            except Exception:
+                contours = self.contour_engine.extract_contours(mask_path)
         print(f"Extracted {len(contours)} contours.")
 
         # 3. Matching
@@ -241,12 +250,27 @@ if __name__ == "__main__":
         exit(1)
 
     ocr_engine = EasyOCREngine()
-    contour_engine = UNetContourEngine(
-        hf_repo_id="mattiaskvist/topovision-unet",
-        hf_filename="best_model.pt",
+
+    # Choose contour engine:
+    # Option 1: UNet-based semantic segmentation
+    # contour_engine = UNetContourEngine(
+    #     hf_repo_id="mattiaskvist/topovision-unet",
+    #     hf_filename="best_model.pt",
+    #     device="cpu",
+    #     threshold=0.5,
+    # )
+
+    # Option 2: Mask2Former instance segmentation with skeletonization
+    contour_engine = Mask2FormerContourEngine(
+        model_path="mattiaskvist/topovision-segmentation",
         device="cpu",
-        threshold=0.5,
+        score_threshold=0.5,
+        min_length=20.0,
+        use_skeletonization=True,  # Use skeleton-based contour extraction
+        connect_skeleton_gaps=True,  # Connect disconnected skeleton segments
+        max_gap_distance=15,  # Max pixels to bridge between segments
     )
+
     pipeline = HeightExtractionPipeline(
         ocr_engine=ocr_engine, contour_engine=contour_engine
     )
@@ -266,16 +290,17 @@ if __name__ == "__main__":
         print(f"\n--- Processing {image_path.name} ---")
         result = pipeline.run(str(image_path), str(mask_path), drop_ratio=0.0)
 
-        # Save intermediate predicted mask for debugging
-        predicted_mask = pipeline.contour_engine.predict_mask(str(image_path))
-        mask_output_path = (
-            project_root
-            / "output"
-            / "height_extraction"
-            / image_path.name.replace(".png", "_predicted_mask.png")
-        )
-        cv2.imwrite(str(mask_output_path), predicted_mask)
-        print(f"Saved predicted mask to {mask_output_path}")
+        # Save intermediate predicted mask for debugging (UNet only)
+        if hasattr(pipeline.contour_engine, "predict_mask"):
+            predicted_mask = pipeline.contour_engine.predict_mask(str(image_path))
+            mask_output_path = (
+                project_root
+                / "output"
+                / "height_extraction"
+                / image_path.name.replace(".png", "_predicted_mask.png")
+            )
+            cv2.imwrite(str(mask_output_path), predicted_mask)
+            print(f"Saved predicted mask to {mask_output_path}")
 
         output_path = (
             project_root

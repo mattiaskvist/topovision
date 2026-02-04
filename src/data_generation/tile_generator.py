@@ -71,6 +71,26 @@ class PlacedLabel:
     contour_line_pixels: list  # [[x, y], ...] in pixels
 
 
+@dataclass
+class InstanceMaskResult:
+    """Result from instance mask generation.
+
+    Attributes:
+        mask_path: Path to the saved instance mask PNG.
+        instances: List of dicts with instance_id, elevation, and optional metadata.
+    """
+
+    mask_path: Path
+    instances: list[dict]
+
+    def to_dict(self) -> dict:
+        """Convert to JSON-serializable dictionary."""
+        return {
+            "mask_path": str(self.mask_path),
+            "instances": self.instances,
+        }
+
+
 # =============================================================================
 # COLOR GENERATION WITH CONTRAST
 # =============================================================================
@@ -924,6 +944,129 @@ def render_mask(
     cv2.imwrite(str(mask_path), mask)
 
 
+def render_instance_mask(
+    gdf: gpd.GeoDataFrame,
+    bounds: tuple,
+    mask_path: Path,
+    size: int = 512,
+    line_thickness: int = 2,
+    elevation_column: str = ELEV_COLUMN,
+) -> InstanceMaskResult | None:
+    """Render instance segmentation mask with unique ID per contour line.
+
+    Creates a mask where each contour line is drawn with a unique instance ID
+    (1, 2, 3, ..., N). Background is 0. Supports up to 255 instances (uint8).
+
+    Args:
+        gdf: GeoDataFrame with contour line geometries.
+        bounds: (minx, miny, maxx, maxy) world coordinate bounds.
+        mask_path: Output path for the instance mask PNG.
+        size: Output image size in pixels (square).
+        line_thickness: Thickness of contour lines in pixels (2-3 recommended).
+        elevation_column: Name of the elevation column in gdf.
+
+    Returns:
+        InstanceMaskResult with mask path and instance info, or None if empty.
+    """
+    import cv2
+    from shapely.geometry import LineString, MultiLineString
+
+    if gdf.empty:
+        return None
+
+    # Bounds are already square from the splitting process
+    minx, miny, maxx, maxy = bounds
+
+    # Clip GDF to bounds to get all geometries that should be visible
+    clipped_gdf = clip_gdf_to_bounds(gdf, bounds)
+    if clipped_gdf.empty:
+        return None
+
+    # Create black mask (0 = background)
+    mask = np.zeros((size, size), dtype=np.uint8)
+    instances: list[dict] = []
+    current_instance_id = 0
+
+    def to_pixel_coord(x: float, y: float) -> tuple[int, int]:
+        """Convert world coords to pixel coords."""
+        px = (x - minx) / (maxx - minx) * size
+        py = (maxy - y) / (maxy - miny) * size
+        return round(px), round(py)
+
+    def draw_line_coords(coords: list, instance_id: int) -> bool:
+        """Draw a single line with the given instance ID. Returns True if drawn."""
+        if len(coords) < 2:
+            return False
+        pixels = [to_pixel_coord(x, y) for x, y in coords]
+        pts = np.array(pixels, dtype=np.int32)
+        cv2.polylines(
+            mask, [pts], isClosed=False, color=instance_id, thickness=line_thickness
+        )
+        return True
+
+    # Draw each contour line with unique instance ID
+    for _, row in clipped_gdf.iterrows():
+        geom = row.geometry
+        if geom is None or geom.is_empty:
+            continue
+
+        # Get elevation if available
+        elevation = None
+        if elevation_column in row.index:
+            try:
+                elevation = int(row[elevation_column])
+            except (ValueError, TypeError):
+                elevation = None
+
+        # Determine next instance ID (max 255 for uint8)
+        if current_instance_id >= 255:
+            break  # Can't add more instances
+
+        current_instance_id += 1
+        drawn = False
+
+        # Handle both LineString and MultiLineString geometries
+        if isinstance(geom, LineString):
+            try:
+                drawn = draw_line_coords(list(geom.coords), current_instance_id)
+            except Exception:
+                current_instance_id -= 1  # Rollback if failed
+                continue
+        elif isinstance(geom, MultiLineString):
+            # For MultiLineString, all parts get the same instance ID
+            for line in geom.geoms:
+                try:
+                    if draw_line_coords(list(line.coords), current_instance_id):
+                        drawn = True
+                except Exception:
+                    continue
+            if not drawn:
+                current_instance_id -= 1  # Rollback if nothing was drawn
+                continue
+        else:
+            # Try to extract coords anyway (for other geometry types)
+            try:
+                drawn = draw_line_coords(list(geom.coords), current_instance_id)
+            except Exception:
+                current_instance_id -= 1
+                continue
+
+        if drawn:
+            instance_info = {"instance_id": current_instance_id}
+            if elevation is not None:
+                instance_info["elevation"] = elevation
+            instances.append(instance_info)
+
+    if not instances:
+        return None
+
+    # Save mask
+    mask_path.parent.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(mask_path), mask)
+
+    return InstanceMaskResult(mask_path=mask_path, instances=instances)
+
+
 def render_final_tile(
     gdf: gpd.GeoDataFrame,
     bounds: tuple,
@@ -932,8 +1075,9 @@ def render_final_tile(
     size: int = 512,
     dpi: int = 150,
     generate_mask: bool = True,
+    generate_instance_mask: bool = False,
     mask_line_thickness: int = 2,
-) -> list[dict]:
+) -> tuple[list[dict], InstanceMaskResult | None]:
     """Render a tile that has been verified to have no collisions.
 
     Args:
@@ -944,18 +1088,28 @@ def render_final_tile(
         size: Output image size in pixels.
         dpi: Render DPI.
         generate_mask: If True, also generate a binary segmentation mask.
+        generate_instance_mask: If True, also generate instance segmentation mask.
         mask_line_thickness: Line thickness for the mask (2-3 recommended).
 
     Returns:
-        List of label dictionaries with elevation, bbox, and contour pixels.
+        Tuple of (labels list, InstanceMaskResult or None).
     """
     if gdf.empty or ELEV_COLUMN not in gdf.columns:
-        return []
+        return [], None
 
-    # Generate mask if requested
+    instance_result = None
+
+    # Generate binary mask if requested (for UNet training)
     if generate_mask:
         mask_path = img_path.parent / f"{img_path.stem}_mask.png"
         render_mask(gdf, bounds, mask_path, size, mask_line_thickness)
+
+    # Generate instance mask if requested (for Mask2Former training)
+    if generate_instance_mask:
+        instance_mask_path = img_path.parent / f"{img_path.stem}_instance_mask.png"
+        instance_result = render_instance_mask(
+            gdf, bounds, instance_mask_path, size, mask_line_thickness
+        )
 
     rng = random.Random(seed)
 
@@ -1097,7 +1251,7 @@ def render_final_tile(
     plt.savefig(img_path, dpi=dpi, facecolor="white", pad_inches=0)
     plt.close(fig)
 
-    return labels
+    return labels, instance_result
 
 
 # =============================================================================
@@ -1111,6 +1265,7 @@ def process_file(
     size: int = 512,
     dpi: int = 150,
     generate_mask: bool = True,
+    generate_instance_mask: bool = False,
     mask_line_thickness: int = 2,
 ):
     """Process one shapefile with adaptive splitting.
@@ -1121,6 +1276,7 @@ def process_file(
         size: Tile size in pixels (square).
         dpi: Render DPI.
         generate_mask: If True, generate binary segmentation masks alongside tiles.
+        generate_instance_mask: If True, generate instance segmentation masks.
         mask_line_thickness: Line thickness for masks (2-3 recommended).
     """
     print(f"📂 Loading {input_path.name}...")
@@ -1158,7 +1314,7 @@ def process_file(
         img_path = tiles_dir / f"{tile_id}.png"
         labels_path = tiles_dir / f"{tile_id}_labels.json"
 
-        labels = render_final_tile(
+        labels, instance_result = render_final_tile(
             region_gdf,
             region_bounds,
             img_path,
@@ -1166,6 +1322,7 @@ def process_file(
             size,
             dpi,
             generate_mask=generate_mask,
+            generate_instance_mask=generate_instance_mask,
             mask_line_thickness=mask_line_thickness,
         )
 
@@ -1179,6 +1336,13 @@ def process_file(
         }
         if generate_mask:
             json_data["mask"] = {"path": f"{tile_id}_mask.png"}
+
+        # Add instance mask info if generated
+        if generate_instance_mask and instance_result is not None:
+            json_data["instance_mask"] = {
+                "path": f"{tile_id}_instance_mask.png",
+                "instances": instance_result.instances,
+            }
 
         with open(labels_path, "w") as f:
             json.dump(json_data, f, indent=2)
@@ -1210,6 +1374,7 @@ def process_file(
                     "dpi": dpi,
                     "method": "adaptive_split",
                     "generate_mask": generate_mask,
+                    "generate_instance_mask": generate_instance_mask,
                     "mask_line_thickness": mask_line_thickness,
                 },
                 "elevation_range": [float(elev_range[0]), float(elev_range[1])],
@@ -1222,7 +1387,10 @@ def process_file(
         )
 
     mask_msg = " + masks" if generate_mask else ""
-    print(f"\nComplete: {len(all_tiles)} tiles{mask_msg}, {total_labels} labels")
+    instance_msg = " + instance masks" if generate_instance_mask else ""
+    print(
+        f"\nComplete: {len(all_tiles)} tiles{mask_msg}{instance_msg}, {total_labels} labels"  # noqa: E501
+    )
     print(f"Output: {tiles_dir}\n")
 
 
@@ -1250,6 +1418,11 @@ def main():
         "--no-mask",
         action="store_true",
         help="Disable binary mask generation for segmentation training",
+    )
+    parser.add_argument(
+        "--instance-mask",
+        action="store_true",
+        help="Generate instance segmentation masks (for Mask2Former training)",
     )
     parser.add_argument(
         "--mask-thickness",
@@ -1287,6 +1460,7 @@ def main():
             size=args.size,
             dpi=args.dpi,
             generate_mask=not args.no_mask,
+            generate_instance_mask=args.instance_mask,
             mask_line_thickness=args.mask_thickness,
         )
         total_files += 1

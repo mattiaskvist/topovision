@@ -136,7 +136,7 @@ After training completes, download the models and TensorBoard logs:
 modal run src/training/modal_train.py::list_runs
 
 # Download a specific run
-modal run src/training/modal_train.py::download_results --run-name run_20260128_150000
+modal run src/training/mask2former/modal_train.py::download_results --run-name mask2former/mask2former_20260203_232055
 ```
 
 Results are saved to `models/{run_name}/`.

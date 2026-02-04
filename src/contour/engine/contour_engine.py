@@ -1,16 +1,14 @@
-"""Abstract base class for contour extraction engines."""
-
-from abc import ABC
+"""Base class for contour extraction engines."""
 
 import cv2
 import numpy as np
 from scipy import ndimage
 from skimage.morphology import skeletonize
 
-from src.height_extraction.schemas import ContourLine
+from height_extraction.schemas import ContourLine
 
 
-class ContourExtractionEngine(ABC):
+class ContourExtractionEngine:
     """Abstract base class for contour extraction engines.
 
     This class defines the interface for extracting contours from binary masks.
@@ -87,9 +85,12 @@ def _get_neighbors(
             if dr == 0 and dc == 0:
                 continue
             nr, nc = row + dr, col + dc
-            if 0 <= nr < skeleton.shape[0] and 0 <= nc < skeleton.shape[1]:
-                if skeleton[nr, nc]:
-                    neighbors.append((nr, nc))
+            if (
+                0 <= nr < skeleton.shape[0]
+                and 0 <= nc < skeleton.shape[1]
+                and skeleton[nr, nc]
+            ):
+                neighbors.append((nr, nc))
     return neighbors
 
 

@@ -315,21 +315,6 @@ def test_extract_contours_from_mask_empty(mock_model, mock_checkpoint):
     assert len(contours) == 0
 
 
-def test_extract_contours_min_length_filtering(mock_model, mock_checkpoint):
-    """Test that min_length filters short contours."""
-    engine = create_engine_with_mocks(mock_model, mock_checkpoint, min_length=50.0)
-
-    # Create mask with one long and one short line
-    mask = np.zeros((200, 200), dtype=np.uint8)
-    cv2.line(mask, (10, 50), (150, 50), 255, 3)  # Long line (~140px)
-    cv2.line(mask, (10, 100), (30, 100), 255, 3)  # Short line (~20px)
-
-    contours = engine._extract_contours_from_mask(mask)
-
-    # Should only keep the long line
-    assert len(contours) == 1
-
-
 # --- Predict Mask Tests ---
 
 

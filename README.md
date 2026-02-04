@@ -89,5 +89,5 @@ The output includes:
 * [KTH AI Society](https://kthais.com)
 * [ReGen Villages](https://www.regenvillages.com)
 
-**Project Timeline:** Nov 2024 – Jan 2025  
+**Project Timeline:** Nov 2025 – Jan 2026  
 [View Project Board](https://github.com/users/mattiaskvist/projects/4)

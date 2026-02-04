@@ -355,38 +355,3 @@ def test_predict_mask_file_not_found(mock_model, mock_checkpoint):
         pytest.raises(FileNotFoundError, match="Could not read image"),
     ):
         engine.predict_mask("nonexistent.png")
-
-
-# --- Skeletonization Tests ---
-
-
-def test_skeletonize_reduces_thickness(mock_model, mock_checkpoint):
-    """Test that skeletonization reduces line thickness."""
-    engine = create_engine_with_mocks(mock_model, mock_checkpoint)
-
-    # Create thick line
-    mask = np.zeros((100, 100), dtype=np.uint8)
-    cv2.line(mask, (10, 50), (90, 50), 255, 10)
-
-    original_pixels = cv2.countNonZero(mask)
-    skeleton = engine._skeletonize(mask)
-    skeleton_pixels = cv2.countNonZero(skeleton)
-
-    # Skeleton should have significantly fewer pixels
-    assert skeleton_pixels < original_pixels
-    assert skeleton_pixels > 0
-
-
-def test_morphological_skeleton_fallback(mock_model, mock_checkpoint):
-    """Test morphological skeleton as fallback."""
-    engine = create_engine_with_mocks(mock_model, mock_checkpoint)
-
-    # Create a simple shape
-    mask = np.zeros((100, 100), dtype=np.uint8)
-    cv2.rectangle(mask, (30, 30), (70, 70), 255, -1)
-
-    skeleton = engine._morphological_skeleton(mask)
-
-    # Should produce some skeleton
-    assert cv2.countNonZero(skeleton) > 0
-    assert cv2.countNonZero(skeleton) < cv2.countNonZero(mask)

@@ -250,12 +250,27 @@ if __name__ == "__main__":
         exit(1)
 
     ocr_engine = EasyOCREngine()
-    contour_engine = UNetContourEngine(
-        hf_repo_id="mattiaskvist/topovision-unet",
-        hf_filename="best_model.pt",
+
+    # Choose contour engine:
+    # Option 1: UNet-based semantic segmentation
+    # contour_engine = UNetContourEngine(
+    #     hf_repo_id="mattiaskvist/topovision-unet",
+    #     hf_filename="best_model.pt",
+    #     device="cpu",
+    #     threshold=0.5,
+    # )
+
+    # Option 2: Mask2Former instance segmentation with skeletonization
+    contour_engine = Mask2FormerContourEngine(
+        model_path="mattiaskvist/topovision-segmentation",
         device="cpu",
-        threshold=0.5,
+        score_threshold=0.5,
+        min_length=20.0,
+        use_skeletonization=True,  # Use skeleton-based contour extraction
+        connect_skeleton_gaps=True,  # Connect disconnected skeleton segments
+        max_gap_distance=15,  # Max pixels to bridge between segments
     )
+
     pipeline = HeightExtractionPipeline(
         ocr_engine=ocr_engine, contour_engine=contour_engine
     )
@@ -275,16 +290,17 @@ if __name__ == "__main__":
         print(f"\n--- Processing {image_path.name} ---")
         result = pipeline.run(str(image_path), str(mask_path), drop_ratio=0.0)
 
-        # Save intermediate predicted mask for debugging
-        predicted_mask = pipeline.contour_engine.predict_mask(str(image_path))
-        mask_output_path = (
-            project_root
-            / "output"
-            / "height_extraction"
-            / image_path.name.replace(".png", "_predicted_mask.png")
-        )
-        cv2.imwrite(str(mask_output_path), predicted_mask)
-        print(f"Saved predicted mask to {mask_output_path}")
+        # Save intermediate predicted mask for debugging (UNet only)
+        if hasattr(pipeline.contour_engine, "predict_mask"):
+            predicted_mask = pipeline.contour_engine.predict_mask(str(image_path))
+            mask_output_path = (
+                project_root
+                / "output"
+                / "height_extraction"
+                / image_path.name.replace(".png", "_predicted_mask.png")
+            )
+            cv2.imwrite(str(mask_output_path), predicted_mask)
+            print(f"Saved predicted mask to {mask_output_path}")
 
         output_path = (
             project_root

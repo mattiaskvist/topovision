@@ -17,12 +17,6 @@ class ContourExtractionEngine(ABC):
 
     def extract_contours(self, mask_path: str, epsilon: float = 2.0) -> list[ContourLine]:
         """Extracts contours from a binary mask file.
-        
-        Approach:
-        1. Skeletonize to get 1-pixel wide lines
-        2. Trace paths from endpoints
-        3. Merge paths whose endpoints fall within a small radius
-        4. Simplify using Douglas-Peucker algorithm
 
         Args:
             mask_path: Path to the binary mask image.
@@ -35,6 +29,27 @@ class ContourExtractionEngine(ABC):
         if img is None:
             raise FileNotFoundError(f"Could not load image: {mask_path}")
         binary = (img > 127).astype(np.uint8)
+        return self._extract_contours_from_mask(binary, epsilon)
+
+    def _extract_contours_from_mask(
+        self, mask: np.ndarray, epsilon: float = 2.0
+    ) -> list[ContourLine]:
+        """Extract contours from a binary mask array.
+
+        Approach:
+        1. Skeletonize to get 1-pixel wide lines
+        2. Trace paths from endpoints
+        3. Merge paths whose endpoints fall within a small radius
+        4. Simplify using Douglas-Peucker algorithm
+
+        Args:
+            mask: Binary mask array (0s and 1s, or 0s and 255s).
+            epsilon: Simplification tolerance.
+
+        Returns:
+            List of ContourLine objects with (x, y) point sequences.
+        """
+        binary = (mask > 0).astype(np.uint8)
 
         thickness = _estimate_line_thickness(binary)
         radius = max(thickness * 2, 10.0)

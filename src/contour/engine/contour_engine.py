@@ -5,18 +5,16 @@ import numpy as np
 from scipy import ndimage
 from skimage.morphology import skeletonize
 
-from height_extraction.schemas import ContourLine
-
 
 class ContourExtractionEngine:
-    """Abstract base class for contour extraction engines.
+    """Base class for contour extraction engines.
 
     This class defines the interface for extracting contours from binary masks.
     """
 
     def extract_contours(
         self, mask_path: str, epsilon: float = 2.0
-    ) -> list[ContourLine]:
+    ) -> list[np.ndarray]:
         """Extracts contours from a binary mask file.
 
         Args:
@@ -24,7 +22,7 @@ class ContourExtractionEngine:
             epsilon: Simplification tolerance.
 
         Returns:
-            List of ContourLine objects with (x, y) point sequences.
+            List of contours, where each contour is a numpy array of shape (N, 1, 2).
         """
         img = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
         if img is None:
@@ -34,7 +32,7 @@ class ContourExtractionEngine:
 
     def _extract_contours_from_mask(
         self, mask: np.ndarray, epsilon: float = 2.0
-    ) -> list[ContourLine]:
+    ) -> list[np.ndarray]:
         """Extract contours from a binary mask array.
 
         Approach:
@@ -48,7 +46,7 @@ class ContourExtractionEngine:
             epsilon: Simplification tolerance.
 
         Returns:
-            List of ContourLine objects with (x, y) point sequences.
+            List of contours, where each contour is a numpy array of shape (N, 1, 2).
         """
         binary = (mask > 0).astype(np.uint8)
 
@@ -60,15 +58,13 @@ class ContourExtractionEngine:
         paths = _merge_paths(paths, radius)
         paths = [_simplify_path(p, epsilon) for p in paths]
 
-        return [
-            ContourLine(
-                id=i,
-                points=[(col, row) for row, col in path],
-                height=None,
-                source="unknown",
-            )
-            for i, path in enumerate(paths)
-        ]
+        # Convert paths to numpy arrays with shape (N, 1, 2)
+        contours = []
+        for path in paths:
+            # Convert (row, col) to (x, y) = (col, row)
+            points = np.array([(col, row) for row, col in path], dtype=np.int32)
+            contours.append(points.reshape(-1, 1, 2))
+        return contours
 
 
 # ===== Get Line Helpers =====

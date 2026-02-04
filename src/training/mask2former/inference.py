@@ -7,6 +7,8 @@ import argparse
 import cv2
 import numpy as np
 import torch
+from scipy.interpolate import splev, splprep
+from scipy.ndimage import binary_dilation
 from skimage.morphology import skeletonize
 from transformers import Mask2FormerForUniversalSegmentation, Mask2FormerImageProcessor
 
@@ -109,14 +111,20 @@ def predict(
     }
 
 
-def extract_skeletons(masks: list[np.ndarray]) -> list[np.ndarray]:
+def extract_skeletons(
+    masks: list[np.ndarray],
+    connect_gaps: bool = True,
+    max_gap_distance: int = 15,
+) -> list[np.ndarray]:
     """Extract single-pixel wide skeletons from instance masks.
 
     Uses morphological skeletonization to reduce each contour mask
-    to its medial axis (spine).
+    to its medial axis (spine), with optional gap connection.
 
     Args:
         masks: List of binary masks (H, W) from predict().
+        connect_gaps: Whether to connect nearby disconnected skeleton segments.
+        max_gap_distance: Maximum pixel distance to bridge between segments.
 
     Returns:
         List of skeleton masks (H, W), each with single-pixel wide lines.
@@ -125,8 +133,123 @@ def extract_skeletons(masks: list[np.ndarray]) -> list[np.ndarray]:
     for mask in masks:
         # Skeletonize expects binary image
         skeleton = skeletonize(mask.astype(bool))
-        skeletons.append(skeleton.astype(np.uint8))
+        skeleton = skeleton.astype(np.uint8)
+
+        if connect_gaps:
+            skeleton = _connect_skeleton_gaps(skeleton, max_gap_distance)
+
+        skeletons.append(skeleton)
     return skeletons
+
+
+def _find_skeleton_endpoints(skeleton: np.ndarray) -> np.ndarray:
+    """Find endpoint pixels in a skeleton (pixels with only one neighbor).
+
+    Args:
+        skeleton: Binary skeleton image.
+
+    Returns:
+        Array of endpoint coordinates as (N, 2) in (y, x) format.
+    """
+    # Convolve with a kernel that counts 8-connected neighbors
+    kernel = np.array([[1, 1, 1], [1, 0, 1], [1, 1, 1]], dtype=np.uint8)
+    neighbor_count = cv2.filter2D(skeleton, -1, kernel)
+
+    # Endpoints have exactly 1 neighbor and are part of the skeleton
+    endpoints = (neighbor_count == 1) & (skeleton > 0)
+    return np.column_stack(np.where(endpoints))
+
+
+def _connect_skeleton_gaps(
+    skeleton: np.ndarray,
+    max_distance: int = 15,
+) -> np.ndarray:
+    """Connect nearby disconnected segments in a skeleton.
+
+    Finds endpoints of skeleton segments and connects pairs that are
+    within max_distance of each other using linear interpolation.
+
+    Args:
+        skeleton: Binary skeleton image.
+        max_distance: Maximum pixel distance to bridge.
+
+    Returns:
+        Connected skeleton image.
+    """
+    skeleton = skeleton.copy()
+    endpoints = _find_skeleton_endpoints(skeleton)
+
+    if len(endpoints) < 2:
+        return skeleton
+
+    # Find pairs of endpoints that should be connected
+    connected = set()
+
+    for i, ep1 in enumerate(endpoints):
+        if i in connected:
+            continue
+
+        best_j = None
+        best_dist = float("inf")
+
+        for j, ep2 in enumerate(endpoints):
+            if j <= i or j in connected:
+                continue
+
+            # Calculate distance
+            dist = np.sqrt((ep1[0] - ep2[0]) ** 2 + (ep1[1] - ep2[1]) ** 2)
+
+            if (
+                dist < best_dist
+                and dist <= max_distance
+                and not _are_connected(skeleton, ep1, ep2)
+            ):
+                # Check if these endpoints belong to different components
+                # by checking if there's already a path between them
+
+                best_dist = dist
+                best_j = j
+
+        if best_j is not None:
+            # Draw line between endpoints
+            ep2 = endpoints[best_j]
+            cv2.line(
+                skeleton,
+                (ep1[1], ep1[0]),  # cv2 uses (x, y)
+                (ep2[1], ep2[0]),
+                1,
+                thickness=1,
+            )
+            connected.add(i)
+            connected.add(best_j)
+
+    return skeleton
+
+
+def _are_connected(
+    skeleton: np.ndarray,
+    point1: np.ndarray,
+    point2: np.ndarray,
+) -> bool:
+    """Check if two points are connected in the skeleton via flood fill.
+
+    Args:
+        skeleton: Binary skeleton image.
+        point1: First point (y, x).
+        point2: Second point (y, x).
+
+    Returns:
+        True if points are connected.
+    """
+    # Use connected components to check connectivity
+    # Dilate slightly to handle near-connections
+    dilated = binary_dilation(skeleton, iterations=1)
+    _num_labels, labeled = cv2.connectedComponents(dilated.astype(np.uint8))
+
+    label1 = labeled[point1[0], point1[1]]
+    label2 = labeled[point2[0], point2[1]]
+
+    return label1 == label2 and label1 > 0
 
 
 def _order_points_nearest_neighbor(points: np.ndarray) -> np.ndarray:
@@ -167,12 +290,18 @@ def _order_points_nearest_neighbor(points: np.ndarray) -> np.ndarray:
 def masks_to_polylines(
     skeletons: list[np.ndarray],
     min_length: int = 10,
+    smooth: bool = False,
+    smoothing_factor: float = 0.0,
+    num_points: int | None = None,
 ) -> list[np.ndarray]:
     """Convert skeleton masks to ordered polyline coordinates.
 
     Args:
         skeletons: List of skeleton masks from extract_skeletons().
         min_length: Minimum number of points to keep a polyline.
+        smooth: Whether to apply spline smoothing to polylines.
+        smoothing_factor: Smoothing factor for spline (0 = interpolate exactly).
+        num_points: Number of points in output polyline (None = same as input).
 
     Returns:
         List of polylines, each as array of (x, y) coordinates.
@@ -191,9 +320,47 @@ def masks_to_polylines(
 
         # Order points along the line using nearest neighbor
         ordered = _order_points_nearest_neighbor(points)
+
+        if smooth and len(ordered) >= 4:
+            ordered = _smooth_polyline(ordered, smoothing_factor, num_points)
+
         polylines.append(ordered)
 
     return polylines
+
+
+def _smooth_polyline(
+    points: np.ndarray,
+    smoothing_factor: float = 0.0,
+    num_points: int | None = None,
+) -> np.ndarray:
+    """Smooth a polyline using B-spline interpolation.
+
+    Args:
+        points: Ordered points as (N, 2) array of (x, y).
+        smoothing_factor: Smoothing factor (0 = exact interpolation).
+        num_points: Number of points in output (None = same as input).
+
+    Returns:
+        Smoothed polyline as (M, 2) array.
+    """
+    if num_points is None:
+        num_points = len(points)
+
+    try:
+        # Fit a B-spline to the points
+        # k=3 for cubic spline, but reduce if not enough points
+        k = min(3, len(points) - 1)
+        tck, _u = splprep([points[:, 0], points[:, 1]], s=smoothing_factor, k=k)
+
+        # Evaluate spline at evenly spaced points
+        u_new = np.linspace(0, 1, num_points)
+        x_new, y_new = splev(u_new, tck)
+
+        return np.column_stack([x_new, y_new])
+    except Exception:
+        # Fall back to original if spline fitting fails
+        return points
 
 
 def predict_with_skeletons(
@@ -202,6 +369,9 @@ def predict_with_skeletons(
     image: np.ndarray,
     device: torch.device,
     threshold: float = 0.5,
+    connect_gaps: bool = True,
+    max_gap_distance: int = 15,
+    smooth_polylines: bool = False,
 ) -> dict:
     """Run inference and extract skeletons in one call.
 
@@ -211,14 +381,21 @@ def predict_with_skeletons(
         image: RGB image as numpy array (H, W, 3).
         device: Device to use.
         threshold: Confidence threshold.
+        connect_gaps: Whether to connect disconnected skeleton segments.
+        max_gap_distance: Maximum pixel distance to bridge between segments.
+        smooth_polylines: Whether to apply spline smoothing to polylines.
 
     Returns:
         Dictionary with masks, skeletons, polylines, scores, labels.
     """
     predictions = predict(model, processor, image, device, threshold)
 
-    skeletons = extract_skeletons(predictions["masks"])
-    polylines = masks_to_polylines(skeletons)
+    skeletons = extract_skeletons(
+        predictions["masks"],
+        connect_gaps=connect_gaps,
+        max_gap_distance=max_gap_distance,
+    )
+    polylines = masks_to_polylines(skeletons, smooth=smooth_polylines)
 
     predictions["skeletons"] = skeletons
     predictions["polylines"] = polylines

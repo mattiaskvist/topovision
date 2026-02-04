@@ -13,6 +13,8 @@ import numpy as np
 from scipy import ndimage
 from skimage.morphology import skeletonize
 
+from src.height_extraction.schemas import ContourLine
+
 
 PATH = Path("./data/umask")
 
@@ -171,7 +173,7 @@ def extract_lines(
     image_path: str | Path,
     simplify: bool = True,
     epsilon: float = 2.0,
-) -> list[list[tuple[int, int]]]:
+) -> list[ContourLine]:
     """Extract lines from a binary image.
     
     Args:
@@ -180,7 +182,7 @@ def extract_lines(
         epsilon: Simplification tolerance.
     
     Returns:
-        List of polylines as (row, col) point sequences.
+        List of ContourLine objects with (x, y) point sequences.
     """
     binary = load_binary_image(image_path)
     
@@ -195,18 +197,24 @@ def extract_lines(
     if simplify:
         paths = [simplify_path(p, epsilon) for p in paths]
     
-    return paths
-
-
-def lines_to_xy(lines: list[list[tuple[int, int]]]) -> list[list[tuple[int, int]]]:
-    """Convert from (row, col) to (x, y) format."""
-    return [[(c, r) for r, c in line] for line in lines]
+    # Convert to ContourLine objects with (x, y) coordinates
+    contour_lines = [
+        ContourLine(
+            id=i,
+            points=[(col, row) for row, col in path],  # Convert (row, col) to (x, y)
+            height=None,
+            source="unknown",
+        )
+        for i, path in enumerate(paths)
+    ]
+    
+    return contour_lines
 
 
 def visualize(
     original: np.ndarray,
     skeleton: np.ndarray,
-    lines: list[list[tuple[int, int]]],
+    contour_lines: list[ContourLine],
     output_path: str | Path | None = None,
 ) -> None:
     """Show extraction results."""
@@ -223,12 +231,12 @@ def visualize(
     axes[1].axis("off")
 
     axes[2].imshow(np.zeros_like(original), cmap="gray")
-    colors = plt.cm.tab10(np.linspace(0, 1, max(len(lines), 1)))
-    for i, line in enumerate(lines):
-        if line:
-            rows, cols = zip(*line)
-            axes[2].plot(cols, rows, color=colors[i % len(colors)], linewidth=1)
-    axes[2].set_title(f"Lines ({len(lines)})")
+    colors = plt.cm.tab10(np.linspace(0, 1, max(len(contour_lines), 1)))
+    for i, contour in enumerate(contour_lines):
+        if contour.points:
+            xs, ys = zip(*contour.points)  # points are (x, y)
+            axes[2].plot(xs, ys, color=colors[i % len(colors)], linewidth=1)
+    axes[2].set_title(f"Lines ({len(contour_lines)})")
     axes[2].axis("off")
 
     plt.tight_layout()
@@ -243,11 +251,11 @@ if __name__ == "__main__":
     for mask_file in sorted(PATH.glob("*_mask.png")):
         print(f"\n{mask_file.name}")
         
-        lines = extract_lines(mask_file)
-        print(f"  {len(lines)} lines, {sum(len(l) for l in lines)} points")
+        contour_lines = extract_lines(mask_file)
+        total_points = sum(len(c.points) for c in contour_lines)
+        print(f"  {len(contour_lines)} lines, {total_points} points")
         
         binary = load_binary_image(mask_file)
         skeleton = skeletonize(binary).astype(np.uint8)
-        visualize(binary, skeleton, lines)
-
+        visualize(binary, skeleton, contour_lines)
 

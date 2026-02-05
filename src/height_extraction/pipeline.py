@@ -187,8 +187,15 @@ class HeightExtractionPipeline:
             )
 
         for contour_line in output.contours:
-            # Convert points back to numpy array for cv2.drawContours
+            # Convert points back to numpy array for OpenCV polylines
             pts = np.array(contour_line.points, dtype=np.int32).reshape((-1, 1, 2))
+            is_closed = False
+            if len(contour_line.points) > 2:
+                first = contour_line.points[0]
+                last = contour_line.points[-1]
+                dx = first[0] - last[0]
+                dy = first[1] - last[1]
+                is_closed = (dx * dx + dy * dy) <= 4
 
             if contour_line.height is not None:
                 color = KNOWN_CONTOUR_COLOR
@@ -197,7 +204,13 @@ class HeightExtractionPipeline:
                 color = UNKNOWN_CONTOUR_COLOR
                 label = "?"
 
-            cv2.drawContours(img, [pts], -1, color, CONTOUR_THICKNESS)
+            cv2.polylines(
+                img,
+                [pts],
+                isClosed=is_closed,
+                color=color,
+                thickness=CONTOUR_THICKNESS,
+            )
 
             pt = contour_line.points[0]
             x = max(10, min(img.shape[1] - 50, pt[0]))
@@ -242,8 +255,8 @@ if __name__ == "__main__":
 
     ocr_engine = EasyOCREngine()
     contour_engine = UNetContourEngine(
-        hf_repo_id="mattiaskvist/topovision-unet",
-        hf_filename="best_model.pt",
+        hf_repo_id="mattiaskvist/topovision-segmentation",
+        hf_filename="unet/best_model.pt",
         device="cpu",
         threshold=0.5,
     )

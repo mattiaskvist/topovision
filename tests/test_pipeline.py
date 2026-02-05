@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 
 from height_extraction.pipeline import HeightExtractionPipeline
+from height_extraction.schemas import ContourLine, HeightExtractionOutput
 from OCR.engine.ocr_engine import DetectionResult, Polygon
 
 
@@ -70,3 +71,32 @@ def test_pipeline_integration_flow():
         assert len(result.contours) == 1
         assert result.contours[0].height == 100.0
         assert result.contours[0].source == "ocr"
+
+
+def test_visualize_does_not_close_open_contours(tmp_path):
+    pipeline = HeightExtractionPipeline(
+        ocr_engine=MagicMock(), contour_engine=MagicMock()
+    )
+    output = HeightExtractionOutput(
+        image_path="img.png",
+        contours=[
+            ContourLine(
+                id=0,
+                points=[(10, 10), (30, 10), (50, 10)],
+                height=100.0,
+                source="ocr",
+            )
+        ],
+    )
+
+    mock_img = np.zeros((100, 100, 3), dtype=np.uint8)
+
+    with (
+        patch("cv2.imread", return_value=mock_img),
+        patch("cv2.imwrite", return_value=True),
+        patch("cv2.polylines") as mock_polylines,
+    ):
+        pipeline.visualize(output, str(tmp_path / "out.png"))
+
+    assert mock_polylines.call_count == 1
+    assert mock_polylines.call_args.kwargs["isClosed"] is False

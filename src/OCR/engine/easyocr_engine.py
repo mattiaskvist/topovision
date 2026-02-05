@@ -80,6 +80,17 @@ class EasyOCREngine(OCREngine):
         _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
         variants.append(binary)
 
+        # Adaptive threshold for uneven lighting
+        adaptive = cv2.adaptiveThreshold(
+            gray,
+            255,
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY,
+            31,
+            5,
+        )
+        variants.append(adaptive)
+
         return variants
 
     def extract_with_polygons(

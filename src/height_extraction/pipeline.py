@@ -38,15 +38,17 @@ class HeightExtractionPipeline:
         self,
         ocr_engine: OCREngine = None,
         contour_engine: ContourExtractionEngine = None,
+        ocr_scale_factors: list[float] | None = None,
     ):
         """Initializes the pipeline.
 
         Args:
-            ocr_engine: Optional custom OCR engine. Defaults to PaddleOCREngine.
+            ocr_engine: Optional custom OCR engine. Defaults to EasyOCREngine.
             contour_engine: Optional custom contour engine. Defaults to
                 CV2ContourEngine.
+            ocr_scale_factors: Optional OCR scale factors for EasyOCREngine.
         """
-        self.ocr_engine = ocr_engine or EasyOCREngine()
+        self.ocr_engine = ocr_engine or EasyOCREngine(scale_factors=ocr_scale_factors)
         self.contour_engine = contour_engine or CV2ContourEngine()
 
     def run(
@@ -253,7 +255,6 @@ if __name__ == "__main__":
         print("No synthetic images found.")
         exit(1)
 
-    ocr_engine = EasyOCREngine()
     contour_engine = UNetContourEngine(
         hf_repo_id="mattiaskvist/topovision-segmentation",
         hf_filename="unet/best_model.pt",
@@ -261,7 +262,8 @@ if __name__ == "__main__":
         threshold=0.5,
     )
     pipeline = HeightExtractionPipeline(
-        ocr_engine=ocr_engine, contour_engine=contour_engine
+        contour_engine=contour_engine,
+        ocr_scale_factors=[2.0, 2.5, 3.0],
     )
 
     # process 5 images

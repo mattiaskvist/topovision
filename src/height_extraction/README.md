@@ -98,6 +98,10 @@ pipeline = HeightExtractionPipeline(contour_engine=contour_engine)
 - `drop_ratio`: In `pipeline.py`, you can set `drop_ratio` (e.g., `0.2`) to simulate missing OCR labels and test the inference logic.
 - `ocr_scale_factors`: Optional list of OCR scale factors used by `EasyOCREngine`
   when the pipeline constructs the default OCR engine.
+- `filter_ocr_outliers`: Filters OCR heights that fall outside the main cluster.
+- `ocr_outlier_min_samples`: Minimum number of parsed heights required to filter.
+- `ocr_outlier_min_interval`: Minimum interval used to estimate cluster spacing.
+- `ocr_outlier_gap_factor`: Gap multiplier for splitting height clusters.
 
 ### Verifying Matching with Ground Truth Labels
 

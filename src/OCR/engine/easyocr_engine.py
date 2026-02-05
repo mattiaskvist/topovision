@@ -10,9 +10,14 @@ from .ocr_engine import DetectionResult, OCREngine, Polygon
 class EasyOCREngine(OCREngine):
     """Engine to perform OCR on images using EasyOCR."""
 
-    def __init__(self):
-        """Initializes the EasyOCREngine with EasyOCR reader."""
+    def __init__(self, scale_factors: list[float] | None = None):
+        """Initializes the EasyOCREngine with EasyOCR reader.
+
+        Args:
+            scale_factors: Optional list of scale factors to try. Defaults to [2.5].
+        """
         self.reader = easyocr.Reader(["en"], gpu=False)
+        self.scale_factors = scale_factors or [2.5]
 
     def _nms(
         self, results: list[DetectionResult], iou_thresh: float = 0.3
@@ -78,53 +83,60 @@ class EasyOCREngine(OCREngine):
         return variants
 
     def extract_with_polygons(
-        self, image_path: str, scale_factor: float = 2.5
+        self, image_path: str, scale_factor: float | None = None
     ) -> list[DetectionResult]:
         """Extract text with polygons.
 
         Args:
             image_path (str): Path to image.
-            scale_factor (float): scaling factor before doing OCR on image.
+            scale_factor (float | None): Optional single scaling factor to override
+                configured multi-scale behavior.
         """
-        assert scale_factor > 0, "has to be positive"
+        scale_factors = (
+            [scale_factor] if scale_factor is not None else self.scale_factors
+        )
+        if not scale_factors:
+            return []
+        if any(factor <= 0 for factor in scale_factors):
+            raise ValueError("scale_factors must be positive")
 
         img_orig = cv2.imread(str(image_path))
         if img_orig is None:
             return []
 
-        # Resize upwards to improve OCR on small text
-        h, w = img_orig.shape[:2]
-        img = cv2.resize(
-            img_orig,
-            (int(w * scale_factor), int(h * scale_factor)),
-            interpolation=cv2.INTER_LANCZOS4,
-        )
-
-        variants = self._preprocess(img)
-
         results = []
-        for variant in variants:
-            outputs = self.reader.readtext(
-                variant,
-                allowlist="0123456789",
-                paragraph=False,
-                min_size=8,
-                text_threshold=0.4,
-                low_text=0.3,
+        for factor in scale_factors:
+            # Resize upwards to improve OCR on small text
+            h, w = img_orig.shape[:2]
+            img = cv2.resize(
+                img_orig,
+                (int(w * factor), int(h * factor)),
+                interpolation=cv2.INTER_LANCZOS4,
             )
 
-            for bbox, text, conf in outputs:
-                if not text or conf < 0.35:
-                    continue
-
-                # Scale coordinates back to original image size
-                scaled_points = [
-                    (int(p[0] / scale_factor), int(p[1] / scale_factor)) for p in bbox
-                ]
-                polygon = Polygon(points=scaled_points)
-                results.append(
-                    DetectionResult(text=text, polygon=polygon, confidence=conf)
+            variants = self._preprocess(img)
+            for variant in variants:
+                outputs = self.reader.readtext(
+                    variant,
+                    allowlist="0123456789",
+                    paragraph=False,
+                    min_size=8,
+                    text_threshold=0.4,
+                    low_text=0.3,
                 )
+
+                for bbox, text, conf in outputs:
+                    if not text or conf < 0.35:
+                        continue
+
+                    # Scale coordinates back to original image size
+                    scaled_points = [
+                        (int(p[0] / factor), int(p[1] / factor)) for p in bbox
+                    ]
+                    polygon = Polygon(points=scaled_points)
+                    results.append(
+                        DetectionResult(text=text, polygon=polygon, confidence=conf)
+                    )
 
         results = self._nms(results)
         return results

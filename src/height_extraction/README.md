@@ -18,7 +18,7 @@ This module extracts height curves from topographical maps by combining OCR resu
     - **Implementations**:
       - `EasyOCREngine`: Production OCR using EasyOCR library.
       - `PaddleOCREngine`: Alternative OCR using PaddleOCR.
-      - `MockOCREngine`: Uses ground truth annotations for testing.
+      - `MockOCREngine`: Uses per-image `*_labels.json` annotations for testing.
 
 3. **Matching** (`matcher.py`):
 
@@ -94,6 +94,12 @@ pipeline = HeightExtractionPipeline(contour_engine=contour_engine)
 ### Parameters
 
 - `drop_ratio`: In `pipeline.py`, you can set `drop_ratio` (e.g., `0.2`) to simulate missing OCR labels and test the inference logic.
+
+### Verifying Matching with Ground Truth Labels
+
+```bash
+uv run python tools/verify_matching.py data/training/N60E013/N60E013 --limit 20
+```
 
 ### Output Structure
 

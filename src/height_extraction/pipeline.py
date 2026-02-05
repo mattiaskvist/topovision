@@ -2,6 +2,7 @@
 
 import os
 import random
+from itertools import pairwise
 
 import cv2
 import numpy as np
@@ -10,10 +11,10 @@ from contour.engine.contour_engine import ContourExtractionEngine
 from contour.engine.cv2_contour_engine import CV2ContourEngine
 from contour.engine.unet_contour_engine import UNetContourEngine
 from OCR.engine.easyocr_engine import EasyOCREngine
-from OCR.engine.ocr_engine import OCREngine
+from OCR.engine.ocr_engine import DetectionResult, OCREngine
 
 from .inference import build_adjacency_graph, infer_missing_heights
-from .matcher import match_text_to_contours
+from .matcher import match_text_to_contours, parse_height_text
 from .mesh_generation import export_to_obj, generate_heightmap, visualize_mesh
 from .schemas import ContourLine, HeightExtractionOutput
 
@@ -24,6 +25,68 @@ TEXT_THICKNESS = 1
 TEXT_COLOR = (255, 0, 0)  # Blue
 KNOWN_CONTOUR_COLOR = (0, 255, 0)  # Green
 UNKNOWN_CONTOUR_COLOR = (0, 0, 255)  # Red
+
+
+def filter_outlier_detections(
+    detections: list[DetectionResult],
+    min_samples: int = 5,
+    min_interval: float = 10.0,
+    gap_factor: float = 2.5,
+) -> list[DetectionResult]:
+    """Filter OCR detections with outlier height values."""
+    parsed: list[tuple[DetectionResult, float]] = []
+    keep: list[DetectionResult] = []
+
+    for det in detections:
+        height = parse_height_text(det.text)
+        if height is None:
+            keep.append(det)
+        else:
+            parsed.append((det, height))
+
+    if len(parsed) < min_samples:
+        return detections
+
+    heights = sorted(h for _, h in parsed)
+    diffs = [b - a for a, b in pairwise(heights) if b > a]
+    candidate_diffs = [d for d in diffs if d >= min_interval]
+    if not candidate_diffs:
+        return detections
+
+    interval = float(np.median(candidate_diffs))
+    gap_threshold = interval * gap_factor
+
+    clusters: list[list[float]] = []
+    current: list[float] = [heights[0]]
+    for prev, curr in pairwise(heights):
+        if curr - prev > gap_threshold:
+            clusters.append(current)
+            current = [curr]
+        else:
+            current.append(curr)
+    clusters.append(current)
+
+    clusters.sort(key=lambda cluster: len(cluster), reverse=True)
+    main_cluster = clusters[0]
+    cluster_min = min(main_cluster)
+    cluster_max = max(main_cluster)
+
+    outliers: list[float] = []
+    for det, height in parsed:
+        if cluster_min <= height <= cluster_max:
+            keep.append(det)
+        else:
+            outliers.append(height)
+
+    if outliers:
+        unique = sorted(set(outliers))
+        print(
+            "Filtered OCR outliers "
+            f"(interval~{interval:.1f}, cluster=[{cluster_min:.1f}, "
+            f"{cluster_max:.1f}]): {unique}"
+        )
+
+    return keep
 
 
 class HeightExtractionPipeline:
@@ -38,16 +101,30 @@ class HeightExtractionPipeline:
         self,
         ocr_engine: OCREngine = None,
         contour_engine: ContourExtractionEngine = None,
+        ocr_scale_factors: list[float] | None = None,
+        filter_ocr_outliers: bool = True,
+        ocr_outlier_min_samples: int = 5,
+        ocr_outlier_min_interval: float = 10.0,
+        ocr_outlier_gap_factor: float = 2.5,
     ):
         """Initializes the pipeline.
 
         Args:
-            ocr_engine: Optional custom OCR engine. Defaults to PaddleOCREngine.
+            ocr_engine: Optional custom OCR engine. Defaults to EasyOCREngine.
             contour_engine: Optional custom contour engine. Defaults to
                 CV2ContourEngine.
+            ocr_scale_factors: Optional OCR scale factors for EasyOCREngine.
+            filter_ocr_outliers: Whether to filter OCR outlier heights.
+            ocr_outlier_min_samples: Minimum samples required to filter outliers.
+            ocr_outlier_min_interval: Minimum interval to estimate contour spacing.
+            ocr_outlier_gap_factor: Gap factor for outlier clustering.
         """
-        self.ocr_engine = ocr_engine or EasyOCREngine()
+        self.ocr_engine = ocr_engine or EasyOCREngine(scale_factors=ocr_scale_factors)
         self.contour_engine = contour_engine or CV2ContourEngine()
+        self.filter_ocr_outliers = filter_ocr_outliers
+        self.ocr_outlier_min_samples = ocr_outlier_min_samples
+        self.ocr_outlier_min_interval = ocr_outlier_min_interval
+        self.ocr_outlier_gap_factor = ocr_outlier_gap_factor
 
     def run(
         self, image_path: str, mask_path: str, drop_ratio: float = 0.0
@@ -68,6 +145,14 @@ class HeightExtractionPipeline:
         print("Running OCR...")
         detections = self.ocr_engine.extract_with_polygons(image_path)
         print(f"Found {len(detections)} text detections.")
+
+        if self.filter_ocr_outliers:
+            detections = filter_outlier_detections(
+                detections,
+                min_samples=self.ocr_outlier_min_samples,
+                min_interval=self.ocr_outlier_min_interval,
+                gap_factor=self.ocr_outlier_gap_factor,
+            )
 
         if drop_ratio > 0:
             random.seed(42)  # Deterministic for testing
@@ -253,7 +338,6 @@ if __name__ == "__main__":
         print("No synthetic images found.")
         exit(1)
 
-    ocr_engine = EasyOCREngine()
     contour_engine = UNetContourEngine(
         hf_repo_id="mattiaskvist/topovision-segmentation",
         hf_filename="unet/best_model.pt",
@@ -261,7 +345,8 @@ if __name__ == "__main__":
         threshold=0.5,
     )
     pipeline = HeightExtractionPipeline(
-        ocr_engine=ocr_engine, contour_engine=contour_engine
+        contour_engine=contour_engine,
+        ocr_scale_factors=[2.0, 2.5, 3.0],
     )
 
     # process 5 images

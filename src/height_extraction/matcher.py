@@ -76,6 +76,32 @@ def calculate_angle(p1: tuple[float, float], p2: tuple[float, float]) -> float:
     return math.degrees(math.atan2(dy, dx))
 
 
+def calculate_polygon_angle(points: list[tuple[int, int]]) -> float:
+    """Calculates a dominant angle for a polygon based on its longest edge.
+
+    Args:
+        points: Polygon points in order.
+
+    Returns:
+        The angle in degrees of the longest edge, or 0.0 if unavailable.
+    """
+    if len(points) < 2:
+        return 0.0
+
+    best_len = -1.0
+    best_angle = 0.0
+    n_points = len(points)
+    for i in range(n_points):
+        p1 = points[i]
+        p2 = points[(i + 1) % n_points]
+        length = math.hypot(p2[0] - p1[0], p2[1] - p1[1])
+        if length > best_len:
+            best_len = length
+            best_angle = calculate_angle(p1, p2)
+
+    return best_angle
+
+
 def min_distance_to_contour(
     point: tuple[float, float], contour: np.ndarray
 ) -> tuple[float, float]:
@@ -171,6 +197,7 @@ def compute_match_candidates(
     contours: list[np.ndarray],
     max_distance: float = 50.0,
     max_angle_diff: float = 30.0,
+    use_angle: bool = False,
 ) -> list[MatchCandidate]:
     """Compute all valid match candidates between detections and contours.
 
@@ -179,6 +206,7 @@ def compute_match_candidates(
         contours: List of contours (numpy arrays of shape (N, 1, 2)).
         max_distance: Maximum distance to consider a match valid.
         max_angle_diff: Maximum angle difference (degrees) to consider valid.
+        use_angle: Whether to use angle alignment when filtering candidates.
 
     Returns:
         List of valid MatchCandidate objects.
@@ -192,16 +220,19 @@ def compute_match_candidates(
 
         centroid = calculate_centroid(detection.polygon.points)
 
-        # Calculate text orientation from top edge (p0 -> p1)
-        p0 = detection.polygon.points[0]
-        p1 = detection.polygon.points[1]
-        text_angle = calculate_angle(p0, p1)
+        text_angle = (
+            calculate_polygon_angle(detection.polygon.points) if use_angle else 0.0
+        )
 
         for cont_idx, contour in enumerate(contours):
             dist, contour_angle = min_distance_to_contour(centroid, contour)
-            angle_diff = calculate_angle_difference(text_angle, contour_angle)
+            angle_diff = (
+                calculate_angle_difference(text_angle, contour_angle)
+                if use_angle
+                else 0.0
+            )
 
-            if dist <= max_distance and angle_diff <= max_angle_diff:
+            if dist <= max_distance and (not use_angle or angle_diff <= max_angle_diff):
                 candidates.append(
                     MatchCandidate(
                         detection_idx=det_idx,
@@ -257,12 +288,13 @@ def match_text_to_contours(
     max_angle_diff: float = 30.0,
     distance_weight: float = 1.0,
     angle_weight: float = 1.0,
+    use_angle: bool = False,
 ) -> dict[int, float]:
     """Match OCR detections to contours using Hungarian algorithm.
 
     Uses scipy's linear_sum_assignment to find the globally optimal one-to-one
-    matching that minimizes total cost. Cost is based on distance and angle
-    difference, weighted by detection confidence.
+    matching that minimizes total cost. Cost is based on distance and (optional)
+    angle difference, weighted by detection confidence.
 
     When multiple detections could match the same contour, the one with lowest
     cost (considering confidence) is selected.
@@ -274,6 +306,7 @@ def match_text_to_contours(
         max_angle_diff: Maximum angle difference (degrees) to consider valid.
         distance_weight: Weight for distance in cost calculation.
         angle_weight: Weight for angle difference in cost calculation.
+        use_angle: Whether to use angle alignment when filtering candidates.
 
     Returns:
         Dictionary mapping contour index to matched height value.
@@ -283,7 +316,11 @@ def match_text_to_contours(
 
     # Get all valid match candidates
     candidates = compute_match_candidates(
-        detections, contours, max_distance, max_angle_diff
+        detections,
+        contours,
+        max_distance,
+        max_angle_diff,
+        use_angle,
     )
 
     if not candidates:

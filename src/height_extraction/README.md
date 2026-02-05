@@ -18,13 +18,15 @@ This module extracts height curves from topographical maps by combining OCR resu
     - **Implementations**:
       - `EasyOCREngine`: Production OCR using EasyOCR library.
       - `PaddleOCREngine`: Alternative OCR using PaddleOCR.
-      - `MockOCREngine`: Uses ground truth annotations for testing.
+      - `MockOCREngine`: Uses per-image `*_labels.json` annotations for testing.
 
 3. **Matching** (`matcher.py`):
 
     - Matches OCR text detections to the nearest contour line.
     - Uses Euclidean distance from the text centroid to the polyline segments.
-    - **Orientation Check**: Verifies that the text rotation aligns with the local tangent of the contour line. Matches are discarded if the angle difference exceeds 30 degrees.
+    - **Orientation Check (Optional)**: Can verify text rotation alignment with the
+      local contour tangent, but is disabled by default since labels are often
+      randomly angled.
 
 4. **Inference** (`inference.py`):
 
@@ -63,7 +65,7 @@ contour_engine = UNetContourEngine(
     device="cuda",  # or "mps" for Mac, "cpu" for fallback
 )
 
-ocr_engine = EasyOCREngine()
+ocr_engine = EasyOCREngine(scale_factors=[2.0, 2.5, 3.0])
 
 pipeline = HeightExtractionPipeline(
     ocr_engine=ocr_engine,
@@ -94,6 +96,18 @@ pipeline = HeightExtractionPipeline(contour_engine=contour_engine)
 ### Parameters
 
 - `drop_ratio`: In `pipeline.py`, you can set `drop_ratio` (e.g., `0.2`) to simulate missing OCR labels and test the inference logic.
+- `ocr_scale_factors`: Optional list of OCR scale factors used by `EasyOCREngine`
+  when the pipeline constructs the default OCR engine.
+- `filter_ocr_outliers`: Filters OCR heights that fall outside the main cluster.
+- `ocr_outlier_min_samples`: Minimum number of parsed heights required to filter.
+- `ocr_outlier_min_interval`: Minimum interval used to estimate cluster spacing.
+- `ocr_outlier_gap_factor`: Gap multiplier for splitting height clusters.
+
+### Verifying Matching with Ground Truth Labels
+
+```bash
+uv run python tools/verify_matching.py data/training/N60E013/N60E013 --limit 20
+```
 
 ### Output Structure
 

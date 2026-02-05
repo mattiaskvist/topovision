@@ -9,6 +9,7 @@ from height_extraction.matcher import (
     calculate_angle,
     calculate_angle_difference,
     calculate_centroid,
+    calculate_polygon_angle,
     compute_match_candidates,
     match_text_to_contours,
     min_distance_to_contour,
@@ -122,6 +123,16 @@ class TestCalculateAngle:
 
     def test_diagonal(self):
         assert calculate_angle((0, 0), (10, 10)) == 45.0
+
+
+class TestCalculatePolygonAngle:
+    def test_prefers_longest_edge(self):
+        points = [(0, 0), (10, 0), (10, 2), (0, 2)]
+        assert calculate_polygon_angle(points) == 0.0
+
+    def test_vertical_longest_edge(self):
+        points = [(0, 0), (2, 0), (2, 10), (0, 10)]
+        assert calculate_polygon_angle(points) == 90.0
 
 
 class TestCalculateAngleDifference:
@@ -274,7 +285,7 @@ class TestComputeMatchCandidates:
         detection = create_detection("100", points)
 
         candidates = compute_match_candidates(
-            [detection], [contour], max_angle_diff=30.0
+            [detection], [contour], max_angle_diff=30.0, use_angle=True
         )
 
         assert len(candidates) == 0
@@ -397,7 +408,9 @@ class TestMatchTextToContours:
         points = make_horizontal_text_box(center_x=15, center_y=50)  # Angle 0
         detection = create_detection("100", points)
 
-        matches = match_text_to_contours([detection], [contour], max_angle_diff=30.0)
+        matches = match_text_to_contours(
+            [detection], [contour], max_angle_diff=30.0, use_angle=True
+        )
 
         assert matches == {}
 
@@ -550,7 +563,9 @@ class TestRectangularAssignment:
         c0 = make_vertical_contour(x=10)
         d0 = create_detection("100", make_horizontal_text_box(center_x=15, center_y=50))
 
-        matches = match_text_to_contours([d0], [c0], max_angle_diff=10.0)
+        matches = match_text_to_contours(
+            [d0], [c0], max_angle_diff=10.0, use_angle=True
+        )
 
         assert matches == {}
 

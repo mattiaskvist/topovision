@@ -32,7 +32,7 @@ class UNetContourEngine(ContourExtractionEngine):
         min_length: float = 50.0,
         epsilon_factor: float = 0.005,
         hf_repo_id: str | None = None,
-        hf_filename: str = "best_model.pt",
+        hf_filename: str = "unet/best_model.pt",
     ):
         """Initialize the U-Net contour engine.
 

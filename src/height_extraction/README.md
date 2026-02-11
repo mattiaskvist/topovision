@@ -40,9 +40,19 @@ This module extracts height curves from topographical maps by combining OCR resu
 
 ## Usage
 
-### Running the Pipeline
+### Running the Pipeline (Demo)
 
-To run the pipeline on training data, execute the following command from the project root:
+Recommended end-to-end demo (EasyOCR + U-Net):
+
+```bash
+uv run python tools/run_demo.py --device mps
+```
+
+Outputs are written to `output/demo/`.
+
+### Running the Module Directly
+
+To run the module script on training data:
 
 ```bash
 cd src

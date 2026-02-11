@@ -201,3 +201,26 @@ def test_heightmap_rejects_invalid_resolution():
 
     with pytest.raises(ValueError, match="resolution_scale"):
         generate_heightmap(output, resolution_scale=0)
+
+
+def test_export_to_obj_uses_height_as_z(tmp_path):
+    grid_x = np.array([[0.0, 0.0], [1.0, 1.0]])
+    grid_y = np.array([[0.0, 1.0], [0.0, 1.0]])
+    grid_z = np.array([[0.0, 10.0], [20.0, 30.0]])
+
+    output_path = tmp_path / "axis_mesh.obj"
+    export_to_obj(grid_x, grid_y, grid_z, str(output_path))
+
+    lines = output_path.read_text().splitlines()
+    vertices = [line for line in lines if line.startswith("v ")]
+    assert len(vertices) == 4
+
+    x0, y0, z0 = (float(val) for val in vertices[0].split()[1:])
+    assert x0 == 0.0
+    assert y0 == -0.0
+    assert z0 == 0.0
+
+    x1, y1, z1 = (float(val) for val in vertices[1].split()[1:])
+    assert x1 == 0.0
+    assert y1 == -1.0
+    assert z1 == 10.0

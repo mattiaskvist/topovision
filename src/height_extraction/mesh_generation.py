@@ -154,8 +154,8 @@ def export_to_obj(
         for i in range(grid_width):
             for j in range(grid_height):
                 x = grid_x[i, j]
-                y = grid_z[i, j] * scale_z
-                z = -grid_y[i, j]  # Flip Z to match standard 3D orientation
+                y = -grid_y[i, j]  # Flip Y to match standard 3D orientation
+                z = grid_z[i, j] * scale_z
                 f.write(f"v {x:.4f} {y:.4f} {z:.4f}\n")
 
         # Write faces
@@ -173,10 +173,10 @@ def export_to_obj(
                 v3 = (i + 1) * grid_height + (j + 1) + 1
                 v4 = i * grid_height + (j + 1) + 1
 
-                # Split quad into two triangles: (v1, v2, v3) and (v1, v3, v4)
-                # Reverted order to point normals up
-                f.write(f"f {v1} {v2} {v3}\n")
-                f.write(f"f {v1} {v3} {v4}\n")
+                # Split quad into two triangles: (v1, v4, v3) and (v1, v3, v2)
+                # Order chosen to keep normals pointing +Z (up).
+                f.write(f"f {v1} {v4} {v3}\n")
+                f.write(f"f {v1} {v3} {v2}\n")
 
     print(f"Saved 3D mesh to {output_path}")
 

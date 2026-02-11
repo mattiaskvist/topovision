@@ -208,5 +208,6 @@ __marimo__/
 
 data/
 output/
+outputs/
 .DS_Store
 models/

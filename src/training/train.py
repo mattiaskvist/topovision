@@ -328,7 +328,7 @@ def main():
     parser.add_argument(
         "--data-dir",
         type=Path,
-        default=Path("data/dataVisualization/output"),
+        default=Path("data/training"),
         help="Directory containing training tiles",
     )
     parser.add_argument(

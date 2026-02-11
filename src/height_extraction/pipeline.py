@@ -339,8 +339,6 @@ if __name__ == "__main__":
         exit(1)
 
     contour_engine = UNetContourEngine(
-        hf_repo_id="mattiaskvist/topovision-segmentation",
-        hf_filename="unet/best_model.pt",
         device="cpu",
         threshold=0.5,
     )

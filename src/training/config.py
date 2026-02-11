@@ -27,9 +27,7 @@ class TrainingConfig:
     """
 
     # Data paths
-    data_dir: Path = field(
-        default_factory=lambda: Path("data/dataVisualization/output")
-    )
+    data_dir: Path = field(default_factory=lambda: Path("data/training"))
     output_dir: Path = field(default_factory=lambda: Path("models"))
 
     # Image settings

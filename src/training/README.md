@@ -32,14 +32,14 @@ First, generate training data with binary masks from real GIS data:
 
 ```bash
 # Generate tiles + masks from a shapefile
-uv run python -m src.dataVisualization.processData \
+uv run python -m src.data_pipeline.process_data \
     --input data/N60E014/N60E014.shp \
     --output data/training \
     --size 512 \
     --mask-thickness 2
 
 # To disable mask generation (images only)
-uv run python -m src.dataVisualization.processData \
+uv run python -m src.data_pipeline.process_data \
     --input data/N60E014/N60E014.shp \
     --output data/training \
     --no-mask
@@ -231,7 +231,7 @@ Training configuration is defined in `config.py`:
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `data_dir` | `data/dataVisualization/output` | Training data directory |
+| `data_dir` | `data/training` | Training data directory |
 | `output_dir` | `models` | Output directory for checkpoints |
 | `image_size` | 512 | Input image size |
 | `batch_size` | 8 | Training batch size |

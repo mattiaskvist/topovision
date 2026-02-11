@@ -4,6 +4,7 @@ import numpy as np
 import open3d as o3d
 from scipy.interpolate import griddata
 from scipy.ndimage import gaussian_filter
+from scipy.spatial import QhullError
 
 from .schemas import HeightExtractionOutput
 
@@ -13,6 +14,7 @@ def generate_heightmap(
     resolution_scale: float = 1.0,
     interpolation_method: str = "cubic",
     smoothing_sigma: float = 0.0,
+    clamp_heights: bool = True,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Generates a dense heightmap from sparse contour lines using interpolation.
 
@@ -22,10 +24,18 @@ def generate_heightmap(
             the image size. 1.0 means same resolution as image.
         interpolation_method: Method for interpolation ('linear', 'nearest', 'cubic').
         smoothing_sigma: Standard deviation for Gaussian kernel smoothing. 0 to disable.
+        clamp_heights: Clamp interpolated heights to the min/max of known values.
 
     Returns:
         Tuple of (grid_x, grid_y, grid_z) arrays.
     """
+    if resolution_scale <= 0:
+        raise ValueError("resolution_scale must be > 0")
+
+    valid_methods = {"linear", "nearest", "cubic"}
+    if interpolation_method not in valid_methods:
+        raise ValueError(f"interpolation_method must be one of {sorted(valid_methods)}")
+
     # 1. Collect all points with known heights
     points = []
     values = []
@@ -55,6 +65,23 @@ def generate_heightmap(
     points = np.array(points)
     values = np.array(values)
 
+    method = interpolation_method
+    if points.shape[0] < 3:
+        method = "nearest"
+    else:
+        centered = points - points.mean(axis=0)
+        rank = np.linalg.matrix_rank(centered)
+        if rank < 2:
+            method = "nearest"
+        elif interpolation_method == "cubic" and points.shape[0] < 4:
+            method = "linear"
+
+    if method != interpolation_method:
+        print(
+            f"Interpolation method downgraded from {interpolation_method} to {method} "
+            "due to insufficient point geometry."
+        )
+
     # 2. Create a regular grid
     # Add a small buffer to ensure we cover the edges
     grid_width = int(max_x * resolution_scale) + 1
@@ -73,7 +100,13 @@ def generate_heightmap(
     # 3. Interpolate
     # griddata expects points as (N, D) and values as (N,)
     # We want to interpolate at query_points
-    grid_z = griddata(points, values, query_points, method=interpolation_method)
+    try:
+        grid_z = griddata(points, values, query_points, method=method)
+    except QhullError as exc:
+        if method == "nearest":
+            raise
+        print(f"Interpolation failed with {method} ({exc}); falling back to nearest.")
+        grid_z = griddata(points, values, query_points, method="nearest")
 
     # Fill NaNs (outside convex hull of points) with nearest neighbor or min value
     # For a landscape, nearest might be better than 0.
@@ -85,6 +118,11 @@ def generate_heightmap(
 
     if smoothing_sigma > 0:
         grid_z = gaussian_filter(grid_z, sigma=smoothing_sigma)
+
+    if clamp_heights:
+        min_height = float(values.min())
+        max_height = float(values.max())
+        grid_z = np.clip(grid_z, min_height, max_height)
 
     return grid_x, grid_y, grid_z
 

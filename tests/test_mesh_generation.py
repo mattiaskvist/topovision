@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 # Add src to path
 sys.path.append(str(Path(__file__).parent.parent / "src"))
@@ -156,3 +157,47 @@ def test_mesh_generation_with_inferred_heights(tmp_path):
     export_to_obj(grid_x, grid_y, grid_z, str(output_path))
     assert output_path.exists()
     assert output_path.stat().st_size > 0
+
+
+def test_heightmap_clamps_overshoot():
+    contours = [
+        ContourLine(id=1, points=[(0, 0)], height=0.0, source="ocr"),
+        ContourLine(id=2, points=[(0, 40)], height=100.0, source="ocr"),
+        ContourLine(id=3, points=[(40, 0)], height=100.0, source="ocr"),
+        ContourLine(id=4, points=[(40, 40)], height=0.0, source="ocr"),
+    ]
+    output = HeightExtractionOutput(image_path="clamp", contours=contours)
+    _, _, grid_z = generate_heightmap(
+        output, resolution_scale=0.5, interpolation_method="cubic"
+    )
+
+    assert not np.isnan(grid_z).any()
+    assert grid_z.min() >= 0.0
+    assert grid_z.max() <= 100.0
+
+
+def test_heightmap_collinear_fallback():
+    contours = [
+        ContourLine(id=1, points=[(0, 0)], height=0.0, source="ocr"),
+        ContourLine(id=2, points=[(20, 0)], height=50.0, source="ocr"),
+        ContourLine(id=3, points=[(40, 0)], height=100.0, source="ocr"),
+    ]
+    output = HeightExtractionOutput(image_path="collinear", contours=contours)
+    _, _, grid_z = generate_heightmap(
+        output, resolution_scale=0.5, interpolation_method="cubic"
+    )
+
+    assert not np.isnan(grid_z).any()
+    assert grid_z.min() >= 0.0
+    assert grid_z.max() <= 100.0
+
+
+def test_heightmap_rejects_invalid_resolution():
+    contours = [
+        ContourLine(id=1, points=[(0, 0)], height=0.0, source="ocr"),
+        ContourLine(id=2, points=[(40, 40)], height=100.0, source="ocr"),
+    ]
+    output = HeightExtractionOutput(image_path="invalid", contours=contours)
+
+    with pytest.raises(ValueError, match="resolution_scale"):
+        generate_heightmap(output, resolution_scale=0)

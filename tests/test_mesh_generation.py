@@ -4,9 +4,15 @@ import os
 import sys
 from pathlib import Path
 
+import numpy as np
+
 # Add src to path
 sys.path.append(str(Path(__file__).parent.parent / "src"))
 
+from height_extraction.inference import (
+    build_adjacency_graph,
+    infer_missing_heights,
+)
 from height_extraction.mesh_generation import export_to_obj, generate_heightmap
 from height_extraction.schemas import ContourLine, HeightExtractionOutput
 
@@ -101,3 +107,52 @@ def test_mesh_generation():
 
 if __name__ == "__main__":
     test_mesh_generation()
+
+
+def test_mesh_generation_with_inferred_heights(tmp_path):
+    print("Testing mesh generation with inferred heights...")
+
+    contours_np = [
+        np.array([[[0, 10]], [[40, 10]]], dtype=np.int32),
+        np.array([[[0, 20]], [[40, 20]]], dtype=np.int32),
+        np.array([[[0, 30]], [[40, 30]]], dtype=np.int32),
+    ]
+    known_heights = {0: 0.0, 2: 100.0}
+
+    adjacency = build_adjacency_graph(contours_np, (50, 50), max_dist=15.0)
+    inferred = infer_missing_heights(contours_np, known_heights, adjacency)
+
+    assert inferred[1] == 50.0
+
+    contours = [
+        ContourLine(
+            id=1,
+            points=[(0, 10), (40, 10)],
+            height=inferred.get(0),
+            source="ocr",
+        ),
+        ContourLine(
+            id=2,
+            points=[(0, 20), (40, 20)],
+            height=inferred.get(1),
+            source="inference",
+        ),
+        ContourLine(
+            id=3,
+            points=[(0, 30), (40, 30)],
+            height=inferred.get(2),
+            source="ocr",
+        ),
+    ]
+
+    output = HeightExtractionOutput(image_path="synthetic_missing", contours=contours)
+    grid_x, grid_y, grid_z = generate_heightmap(output, resolution_scale=0.5)
+
+    assert grid_x.shape == grid_y.shape == grid_z.shape
+    assert grid_z.min() >= -10.0
+    assert grid_z.max() <= 110.0
+
+    output_path = tmp_path / "missing_mesh.obj"
+    export_to_obj(grid_x, grid_y, grid_z, str(output_path))
+    assert output_path.exists()
+    assert output_path.stat().st_size > 0

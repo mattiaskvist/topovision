@@ -2,6 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 
+from height_extraction.mesh_generation import export_to_obj, generate_heightmap
 from height_extraction.pipeline import HeightExtractionPipeline
 from height_extraction.schemas import ContourLine, HeightExtractionOutput
 from OCR.engine.ocr_engine import DetectionResult, Polygon
@@ -71,6 +72,56 @@ def test_pipeline_integration_flow():
         assert len(result.contours) == 1
         assert result.contours[0].height == 100.0
         assert result.contours[0].source == "ocr"
+
+
+def test_pipeline_missing_height_inference_and_mesh(tmp_path):
+    mock_ocr = MagicMock()
+    detections = [
+        DetectionResult(
+            text="0",
+            polygon=Polygon(points=[(0, 8), (10, 8), (10, 12), (0, 12)]),
+            confidence=0.9,
+        ),
+        DetectionResult(
+            text="100",
+            polygon=Polygon(points=[(0, 28), (10, 28), (10, 32), (0, 32)]),
+            confidence=0.9,
+        ),
+    ]
+    mock_ocr.extract_with_polygons.return_value = detections
+
+    mock_contour = MagicMock()
+    contours = [
+        np.array([[[0, 10]], [[40, 10]]], dtype=np.int32),
+        np.array([[[0, 20]], [[40, 20]]], dtype=np.int32),
+        np.array([[[0, 30]], [[40, 30]]], dtype=np.int32),
+    ]
+    mock_contour.extract_contours.return_value = contours
+
+    pipeline = HeightExtractionPipeline(
+        ocr_engine=mock_ocr, contour_engine=mock_contour
+    )
+
+    mock_img = np.zeros((100, 100, 3), dtype=np.uint8)
+    with patch("cv2.imread", return_value=mock_img):
+        result = pipeline.run("img.png", "mask.png")
+
+    assert len(result.contours) == 3
+    assert result.contours[1].height == 50.0
+    assert result.contours[1].source == "inference"
+
+    grid_x, grid_y, grid_z = generate_heightmap(result, resolution_scale=0.5)
+    assert grid_x.shape == grid_y.shape == grid_z.shape
+    assert not np.isnan(grid_z).any()
+
+    output_path = tmp_path / "pipeline_mesh.obj"
+    export_to_obj(grid_x, grid_y, grid_z, str(output_path))
+    lines = output_path.read_text().splitlines()
+    v_count = sum(1 for line in lines if line.startswith("v "))
+    f_count = sum(1 for line in lines if line.startswith("f "))
+    w, h = grid_x.shape
+    assert v_count == w * h
+    assert f_count == (w - 1) * (h - 1) * 2
 
 
 def test_visualize_does_not_close_open_contours(tmp_path):

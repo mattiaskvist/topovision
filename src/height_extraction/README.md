@@ -119,6 +119,14 @@ pipeline = HeightExtractionPipeline(contour_engine=contour_engine)
 uv run python tools/verify_matching.py data/training/N60E013/N60E013 --limit 20
 ```
 
+### Validating Mesh Generation (Perfect + Missing Heights)
+
+Run the mesh validator on training tiles (uses mock OCR labels and masks):
+
+```bash
+uv run python tools/validate_mesh_generation.py --limit 5 --drop-ratios 0 0.4
+```
+
 ### Output Structure
 
 The pipeline returns a `HeightExtractionOutput` Pydantic model, defined in `schemas.py`.

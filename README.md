@@ -14,7 +14,7 @@
 with **ReGen Villages**. The project explores how far we can automate the
 conversion of 2D contour maps into usable 3D terrain assets with computer vision.
 
-<img width="960" height="540" alt="pipeline_image" src="https://github.com/user-attachments/assets/d5e8d91a-4be1-47f5-865e-56f168ac841f" />
+<img width="965" height="540" alt="topovision-workflow" src="https://github.com/user-attachments/assets/002d342f-734a-42eb-9c77-4247a6287abe" />
 
 ## ✅ Project Snapshot
 

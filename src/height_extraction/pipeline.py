@@ -344,7 +344,9 @@ if __name__ == "__main__":
     )
     pipeline = HeightExtractionPipeline(
         contour_engine=contour_engine,
-        ocr_scale_factors=[2.0, 2.5, 3.0],
+        ocr_scale_factors=[
+            2.0,
+        ],
     )
 
     # process 5 images

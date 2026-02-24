@@ -5,7 +5,7 @@
 
 ## Setup Details
 
-Place the downloaded `.shp` or `.geojson` file in `data/dataVisualization/dataExample/` directory.
+Place the downloaded `.` or `.geojson` file in `data/dataVisualization/dataExample/` directory.
 
 Example command:
 ```bash

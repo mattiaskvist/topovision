@@ -61,7 +61,7 @@ uv sync
 Want to see it in action? Run the provided demo script to process a sample tile.
 
 ```bash
-uv run python tools/run_demo.py --device mps --image /path/to/your/image.png
+uv run python tools/run_demo.py --image /path/to/your/image.png
 ```
 
 **What the demo does:**

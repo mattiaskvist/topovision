@@ -85,6 +85,8 @@ If you need to regenerate them, see the [GIS Tile Generation](#gis-tile-generati
 
 The main data pipeline renders map tiles and masks from GIS contour sources:
 
+Data is available from [OpenDEM SRTM Download](https://www.opendem.info/srtm_download_contours/)
+
 ```bash
 uv run python src/data_pipeline/process_data.py \
   --input data/N60E013/N60E013.shp \

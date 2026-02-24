@@ -58,7 +58,7 @@ uv sync
 
 ### End-to-End Demo
 
-Want to see it in action? Run the provided demo script to process a sample tile.
+Want to see it in action? Run the provided demo script to process a sample tile. In tools we have an example image
 
 ```bash
 uv run python tools/run_demo.py --image /path/to/your/image.png

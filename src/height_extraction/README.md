@@ -70,7 +70,7 @@ from height_extraction.pipeline import HeightExtractionPipeline
 
 # Load U-Net model from Hugging Face Hub
 contour_engine = UNetContourEngine(
-    hf_repo_id="mattiaskvist/topovision-unet",
+    hf_repo_id="KTHAISociety/topovision-segmentation",
     hf_filename="best_model.pt",
     device="cuda",  # or "mps" for Mac, "cpu" for fallback
 )

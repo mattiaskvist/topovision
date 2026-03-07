@@ -82,7 +82,7 @@ def main() -> int:
     parser.add_argument(
         "--hf-repo-id",
         type=str,
-        default="mattiaskvist/topovision-unet",
+        default="KTHAISociety/topovision-segmentation",
         help="Hugging Face repo ID for default weights.",
     )
     parser.add_argument(
@@ -115,7 +115,7 @@ def main() -> int:
         device=args.device,
         threshold=args.threshold,
     )
-    ocr_engine = EasyOCREngine(scale_factors=[2.0, 2.5, 3.0])
+    ocr_engine = EasyOCREngine(scale_factors=[2.0])
     pipeline = HeightExtractionPipeline(
         ocr_engine=ocr_engine,
         contour_engine=contour_engine,

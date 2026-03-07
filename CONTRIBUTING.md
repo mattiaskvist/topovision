@@ -16,7 +16,7 @@ This project uses [uv](https://github.com/astral-sh/uv) for dependency managemen
 1.  **Clone the repository:**
 
     ```bash
-    git clone https://github.com/mattiaskvist/topovision.git
+    git clone git@github.com:kthaisociety/topovision.git
     cd topovision
     ```
 

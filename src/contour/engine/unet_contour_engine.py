@@ -65,7 +65,7 @@ class UNetContourEngine(ContourExtractionEngine):
         else:
             # Download from Hugging Face Hub
             self.model_path = self._download_from_hub(
-                hf_repo_id or "mattiaskvist/topovision-unet",
+                hf_repo_id or "KTHAISociety/topovision-segmentation",
                 hf_filename,
             )
 
